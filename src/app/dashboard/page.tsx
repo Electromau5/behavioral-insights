@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useSession, signOut } from 'next-auth/react';
 import Link from 'next/link';
 
 interface Site { id: string; name: string; domain: string; }
@@ -12,12 +13,14 @@ interface Metrics {
 }
 
 export default function Dashboard() {
+  const { data: session } = useSession();
   const [sites, setSites] = useState<Site[]>([]);
   const [selectedSite, setSelectedSite] = useState<string | null>(null);
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [insights, setInsights] = useState<Insight[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddSite, setShowAddSite] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
   const [newSiteName, setNewSiteName] = useState('');
   const [newSiteDomain, setNewSiteDomain] = useState('');
   const [trackingCode, setTrackingCode] = useState('');
@@ -70,6 +73,39 @@ export default function Dashboard() {
               <Link href="/dashboard" className="text-indigo-600 font-medium text-sm">Dashboard</Link>
               <Link href="/flows" className="text-slate-600 hover:text-slate-900 font-medium text-sm">User Flows</Link>
               <button onClick={() => setShowAddSite(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium">Add Site</button>
+              
+              {/* User Menu */}
+              <div className="relative">
+                <button 
+                  onClick={() => setShowUserMenu(!showUserMenu)}
+                  className="flex items-center gap-2 text-sm text-slate-700 hover:text-slate-900"
+                >
+                  <div className="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center">
+                    <span className="text-indigo-600 font-medium">
+                      {session?.user?.name?.[0] || session?.user?.email?.[0]?.toUpperCase() || 'U'}
+                    </span>
+                  </div>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                
+                {showUserMenu && (
+                  <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-slate-200 py-1 z-50">
+                    <div className="px-4 py-2 border-b border-slate-100">
+                      <p className="text-sm font-medium text-slate-900">{session?.user?.name || 'User'}</p>
+                      <p className="text-xs text-slate-500 truncate">{session?.user?.email}</p>
+                    </div>
+                    <Link href="/settings" className="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Settings</Link>
+                    <button 
+                      onClick={() => signOut({ callbackUrl: '/login' })}
+                      className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                    >
+                      Sign out
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -78,6 +114,11 @@ export default function Dashboard() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {sites.length === 0 ? (
           <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
+            <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+              </svg>
+            </div>
             <h2 className="text-xl font-semibold text-slate-900 mb-2">Add Your First Site</h2>
             <p className="text-slate-600 mb-6">Start tracking user behavior by adding your website.</p>
             <button onClick={() => setShowAddSite(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-medium">Add Site</button>

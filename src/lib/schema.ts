@@ -1,18 +1,30 @@
-import { pgTable, text, timestamp, integer, jsonb, uuid, boolean, real } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, uuid, boolean, jsonb, integer, real } from 'drizzle-orm/pg-core';
+
+// Users table for authentication
+export const users = pgTable('users', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  email: text('email').notNull().unique(),
+  password: text('password').notNull(),
+  name: text('name'),
+  emailVerified: boolean('email_verified').default(false),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
 
 export const sites = pgTable('sites', {
   id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').references(() => users.id),
   name: text('name').notNull(),
   domain: text('domain').notNull(),
   apiKey: text('api_key').notNull().unique(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   isActive: boolean('is_active').default(true).notNull(),
   // Site context for AI analysis
-  businessType: text('business_type'), // e.g., "medical technology company", "e-commerce", "SaaS"
-  description: text('description'), // What the site/business does
-  targetAudience: text('target_audience'), // Who visits this site
-  primaryGoals: jsonb('primary_goals'), // Array of goals: ["generate leads", "sell products", "educate visitors"]
-  pageContext: jsonb('page_context'), // Object mapping paths to descriptions: {"/": "Homepage with hero and features", "/contact": "Contact form for inquiries"}
+  businessType: text('business_type'),
+  description: text('description'),
+  targetAudience: text('target_audience'),
+  primaryGoals: jsonb('primary_goals'), // Array of goals as JSON
+  pageContext: jsonb('page_context'), // Object mapping paths to descriptions
 });
 
 export const events = pgTable('events', {
@@ -73,7 +85,7 @@ export const insights = pgTable('insights', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
-// User flows table to store computed flow summaries
+// User flows table (kept for potential future use)
 export const userFlows = pgTable('user_flows', {
   id: uuid('id').primaryKey().defaultRandom(),
   siteId: uuid('site_id').references(() => sites.id).notNull(),

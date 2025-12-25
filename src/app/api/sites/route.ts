@@ -2,14 +2,23 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { sites } from '@/lib/schema';
 import { nanoid } from 'nanoid';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
+import { auth } from '@/lib/auth';
 
 export async function GET() {
   try {
-    const allSites = await db.query.sites.findMany({
+    const session = await auth();
+    
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const userSites = await db.query.sites.findMany({
+      where: eq(sites.userId, session.user.id),
       orderBy: (sites, { desc }) => [desc(sites.createdAt)],
     });
-    return NextResponse.json({ sites: allSites });
+    
+    return NextResponse.json({ sites: userSites });
   } catch (error) {
     console.error('Error fetching sites:', error);
     return NextResponse.json({ error: 'Failed to fetch sites' }, { status: 500 });
@@ -18,6 +27,12 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await auth();
+    
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { name, domain } = await request.json();
 
     if (!name || !domain) {
@@ -27,11 +42,16 @@ export async function POST(request: NextRequest) {
     const cleanDomain = domain.replace(/^https?:\/\//, '').replace(/\/$/, '').toLowerCase();
     const apiKey = `bi_${nanoid(32)}`;
 
-    const [newSite] = await db.insert(sites).values({ name, domain: cleanDomain, apiKey }).returning();
+    const [newSite] = await db.insert(sites).values({ 
+      name, 
+      domain: cleanDomain, 
+      apiKey,
+      userId: session.user.id 
+    }).returning();
 
     return NextResponse.json({ 
       site: newSite,
-      trackingCode: `<script src="${process.env.NEXT_PUBLIC_APP_URL || 'https://your-domain.vercel.app'}/tracker.js" data-site-id="${newSite.id}"></script>`,
+      trackingCode: `<script src="${process.env.NEXT_PUBLIC_APP_URL || 'https://behavioral-insights.vercel.app'}/tracker.js" data-site-id="${newSite.id}"></script>`,
     });
   } catch (error) {
     console.error('Error creating site:', error);
@@ -39,9 +59,14 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Update site context for AI analysis
 export async function PUT(request: NextRequest) {
   try {
+    const session = await auth();
+    
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { 
       siteId, 
       businessType, 
@@ -62,9 +87,9 @@ export async function PUT(request: NextRequest) {
         description,
         targetAudience,
         primaryGoals,
-        pageContext
+        pageContext: pageContext ? JSON.stringify(pageContext) : null
       })
-      .where(eq(sites.id, siteId))
+      .where(and(eq(sites.id, siteId), eq(sites.userId, session.user.id)))
       .returning();
 
     return NextResponse.json({ site: updatedSite });
@@ -76,6 +101,12 @@ export async function PUT(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
+    const session = await auth();
+    
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
     const siteId = searchParams.get('id');
 
@@ -83,7 +114,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Site ID is required' }, { status: 400 });
     }
 
-    await db.delete(sites).where(eq(sites.id, siteId));
+    await db.delete(sites).where(and(eq(sites.id, siteId), eq(sites.userId, session.user.id)));
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Error deleting site:', error);
