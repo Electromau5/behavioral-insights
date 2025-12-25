@@ -66,7 +66,11 @@ export default function Dashboard() {
               </Link>
               {sites.length > 0 && <select value={selectedSite || ''} onChange={(e) => setSelectedSite(e.target.value)} className="ml-4 border border-slate-300 rounded-lg px-3 py-1.5 text-sm bg-white">{sites.map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}</select>}
             </div>
-            <button onClick={() => setShowAddSite(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium">Add Site</button>
+            <div className="flex items-center gap-4">
+              <Link href="/dashboard" className="text-indigo-600 font-medium text-sm">Dashboard</Link>
+              <Link href="/flows" className="text-slate-600 hover:text-slate-900 font-medium text-sm">User Flows</Link>
+              <button onClick={() => setShowAddSite(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium">Add Site</button>
+            </div>
           </div>
         </div>
       </header>
@@ -84,7 +88,13 @@ export default function Dashboard() {
               <div className="flex gap-2">
                 {['7d', '30d', '90d'].map((p) => (<button key={p} onClick={() => setPeriod(p)} className={`px-4 py-2 rounded-lg text-sm font-medium ${period === p ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 border border-slate-300'}`}>{p === '7d' ? 'Last 7 days' : p === '30d' ? 'Last 30 days' : 'Last 90 days'}</button>))}
               </div>
-              <button onClick={generateInsights} disabled={generatingInsights} className="flex items-center gap-2 bg-white border border-slate-300 px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50">{generatingInsights ? 'Generating...' : 'Generate AI Insights'}</button>
+              <div className="flex gap-2">
+                <Link href="/flows" className="flex items-center gap-2 bg-white border border-slate-300 px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-50">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>
+                  View User Flows
+                </Link>
+                <button onClick={generateInsights} disabled={generatingInsights} className="flex items-center gap-2 bg-white border border-slate-300 px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50">{generatingInsights ? 'Generating...' : 'Generate AI Insights'}</button>
+              </div>
             </div>
 
             {insights.length > 0 && (

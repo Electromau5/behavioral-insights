@@ -66,3 +66,23 @@ export const insights = pgTable('insights', {
   isDismissed: boolean('is_dismissed').default(false),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
+
+// User flows table to store computed flow summaries
+export const userFlows = pgTable('user_flows', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  siteId: uuid('site_id').references(() => sites.id).notNull(),
+  sessionId: text('session_id').notNull(),
+  visitorId: text('visitor_id').notNull(),
+  startedAt: timestamp('started_at').notNull(),
+  endedAt: timestamp('ended_at'),
+  duration: integer('duration'),
+  totalEvents: integer('total_events').default(0).notNull(),
+  pagesVisited: integer('pages_visited').default(0).notNull(),
+  totalClicks: integer('total_clicks').default(0).notNull(),
+  entryPage: text('entry_page'),
+  exitPage: text('exit_page'),
+  deviceType: text('device_type'),
+  country: text('country'),
+  flowPath: jsonb('flow_path'), // Array of {type, path, timestamp, details}
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
