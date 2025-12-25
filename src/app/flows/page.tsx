@@ -8,6 +8,7 @@ interface FlowEvent {
   path: string;
   timestamp: string;
   detail?: string | null;
+  data?: Record<string, unknown>;
 }
 
 interface Flow {
@@ -41,6 +42,18 @@ interface Pagination {
   totalPages: number;
 }
 
+interface FlowDetail {
+  session: Flow;
+  timeline: FlowEvent[];
+  summary: {
+    totalEvents: number;
+    pageViews: number;
+    clicks: number;
+    uniquePages: number;
+    pagesVisited: string[];
+  };
+}
+
 export default function FlowsPage() {
   const [sites, setSites] = useState<Site[]>([]);
   const [selectedSite, setSelectedSite] = useState<string | null>(null);
@@ -48,7 +61,7 @@ export default function FlowsPage() {
   const [pagination, setPagination] = useState<Pagination | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedFlow, setSelectedFlow] = useState<Flow | null>(null);
-  const [flowDetail, setFlowDetail] = useState<{ session: Flow; timeline: FlowEvent[]; summary: { totalEvents: number; pageViews: number; clicks: number; uniquePages: number; pagesVisited: string[] } } | null>(null);
+  const [flowDetail, setFlowDetail] = useState<FlowDetail | null>(null);
   const [period, setPeriod] = useState('7d');
   const [page, setPage] = useState(1);
 
@@ -157,6 +170,16 @@ export default function FlowsPage() {
       case 'desktop': return '💻';
       default: return '🖥️';
     }
+  };
+
+  const getEventDetail = (event: FlowEvent) => {
+    if (!event.data) return null;
+    const data = event.data as Record<string, unknown>;
+    if (data.elementText) return `Clicked: "${String(data.elementText).slice(0, 50)}"`;
+    if (data.depth) return `Scroll depth: ${data.depth}%`;
+    if (data.title) return `Title: ${data.title}`;
+    if (data.timeOnPage) return `Time on page: ${Math.round(Number(data.timeOnPage) / 1000)}s`;
+    return null;
   };
 
   if (loading && sites.length === 0) {
@@ -336,9 +359,9 @@ export default function FlowsPage() {
                     <div className="mt-4">
                       <p className="text-xs text-slate-500 mb-2">Pages Visited:</p>
                       <div className="flex flex-wrap gap-2">
-                        {flowDetail.summary.pagesVisited.map((page, i) => (
+                        {flowDetail.summary.pagesVisited.map((pagePath, i) => (
                           <span key={i} className="px-2 py-1 bg-slate-100 text-slate-700 text-xs rounded">
-                            {page}
+                            {pagePath}
                           </span>
                         ))}
                       </div>
@@ -366,18 +389,8 @@ export default function FlowsPage() {
                               </span>
                             </div>
                             <p className="text-sm text-slate-600 mt-1">{event.path}</p>
-                            {event.data && typeof event.data === 'object' && (
-                              <div className="mt-2 text-xs text-slate-500">
-                                {(event.data as { elementText?: string }).elementText && (
-                                  <span>Clicked: "{(event.data as { elementText?: string }).elementText}"</span>
-                                )}
-                                {(event.data as { depth?: number }).depth && (
-                                  <span>Scroll depth: {(event.data as { depth?: number }).depth}%</span>
-                                )}
-                                {(event.data as { title?: string }).title && (
-                                  <span>Title: {(event.data as { title?: string }).title}</span>
-                                )}
-                              </div>
+                            {getEventDetail(event) && (
+                              <p className="mt-2 text-xs text-slate-500">{getEventDetail(event)}</p>
                             )}
                           </div>
                         </div>
