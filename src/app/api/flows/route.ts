@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { events, sessions } from '@/lib/schema';
+import { events, sessions, sites } from '@/lib/schema';
 import { eq, and, gte, lte, desc, asc, sql } from 'drizzle-orm';
 import Anthropic from '@anthropic-ai/sdk';
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 export async function GET(request: NextRequest) {
   try {
@@ -30,6 +28,11 @@ export async function GET(request: NextRequest) {
 
       const session = await db.query.sessions.findFirst({
         where: and(eq(sessions.siteId, siteId), eq(sessions.id, sessionId))
+      });
+
+      // Get site context for AI analysis
+      const site = await db.query.sites.findFirst({
+        where: eq(sites.id, siteId)
       });
 
       if (!session) {
@@ -95,10 +98,47 @@ export async function GET(request: NextRequest) {
         }
       }
 
+      // Extract detailed click information
+      const clickDetails = sessionEvents
+        .filter(e => e.eventType === 'click')
+        .map(e => ({
+          path: e.path,
+          timestamp: e.timestamp,
+          element: (e.eventData as Record<string, unknown>)?.elementText || 
+                   (e.eventData as Record<string, unknown>)?.clickableText || 
+                   'unknown element',
+          elementType: (e.eventData as Record<string, unknown>)?.elementType ||
+                       (e.eventData as Record<string, unknown>)?.clickableType,
+          href: (e.eventData as Record<string, unknown>)?.href
+        }));
+
+      // Extract scroll behavior
+      const scrollEvents = sessionEvents.filter(e => 
+        e.eventType === 'scroll' || e.eventType === 'scroll_milestone'
+      );
+      const maxScrollDepth = Math.max(
+        ...scrollEvents.map(e => (e.eventData as Record<string, unknown>)?.depth as number || 0),
+        0
+      );
+
+      // Detect exit intent
+      const exitIntentEvents = sessionEvents.filter(e => e.eventType === 'exit_intent');
+
       // Generate AI analysis if requested
       let aiAnalysis = null;
       if (analyze && sessionEvents.length > 0) {
         aiAnalysis = await generateFlowAnalysis({
+          // Site context
+          siteContext: {
+            name: site?.name || 'Unknown',
+            domain: site?.domain || '',
+            businessType: site?.businessType || null,
+            description: site?.description || null,
+            targetAudience: site?.targetAudience || null,
+            primaryGoals: site?.primaryGoals as string[] || [],
+            pageContext: site?.pageContext as Record<string, string> || {}
+          },
+          // Session data
           sessionDuration: session.duration,
           pageViews: pageViews.length,
           clicks: clicks.length,
@@ -107,6 +147,9 @@ export async function GET(request: NextRequest) {
           backtracks,
           mostEngagedPage,
           clicksByPage,
+          clickDetails,
+          maxScrollDepth,
+          exitIntentDetected: exitIntentEvents.length > 0,
           entryPage: session.entryPage,
           exitPage: session.exitPage,
           deviceType: session.deviceType,
@@ -244,15 +287,37 @@ export async function GET(request: NextRequest) {
   }
 }
 
+interface SiteContext {
+  name: string;
+  domain: string;
+  businessType: string | null;
+  description: string | null;
+  targetAudience: string | null;
+  primaryGoals: string[];
+  pageContext: Record<string, string>;
+}
+
+interface ClickDetail {
+  path: string;
+  timestamp: Date;
+  element: string;
+  elementType?: string;
+  href?: string;
+}
+
 interface FlowAnalysisInput {
+  siteContext: SiteContext;
   sessionDuration: number | null;
   pageViews: number;
   clicks: number;
   uniquePages: string[];
   timePerPage: Record<string, number>;
   backtracks: { from: string; to: string; timestamp: Date }[];
-  mostEngagedPage: [string, number] | null;
+  mostEngagedPage: [string, number] | undefined;
   clicksByPage: Record<string, number>;
+  clickDetails: ClickDetail[];
+  maxScrollDepth: number;
+  exitIntentDetected: boolean;
   entryPage: string | null;
   exitPage: string | null;
   deviceType: string | null;
@@ -261,85 +326,158 @@ interface FlowAnalysisInput {
   events: { type: string; path: string; timestamp: Date; data: unknown }[];
 }
 
-async function generateFlowAnalysis(data: FlowAnalysisInput) {
-  const prompt = `Analyze this user session and provide insights. Be specific and actionable.
-
-SESSION DATA:
-- Duration: ${data.sessionDuration ? Math.round(data.sessionDuration / 1000) : 0} seconds
-- Pages viewed: ${data.pageViews}
-- Total clicks: ${data.clicks}
-- Unique pages: ${data.uniquePages.join(', ')}
-- Entry page: ${data.entryPage || '/'}
-- Exit page: ${data.exitPage || '/'}
-- Device: ${data.deviceType || 'unknown'}
-- Referrer: ${data.referrer || 'direct'}
-- Bounced: ${data.isBounce ? 'Yes' : 'No'}
-
-TIME PER PAGE:
-${Object.entries(data.timePerPage).map(([page, time]) => `- ${page}: ${Math.round(time / 1000)}s`).join('\n')}
-
-BACKTRACKING (returned to previously visited pages):
-${data.backtracks.length > 0 ? data.backtracks.map(b => `- Went from ${b.from} back to ${b.to}`).join('\n') : 'None'}
-
-CLICKS PER PAGE:
-${Object.entries(data.clicksByPage).map(([page, count]) => `- ${page}: ${count} clicks`).join('\n')}
-
-EVENT SEQUENCE (first 20):
-${data.events.slice(0, 20).map((e, i) => `${i + 1}. ${e.type} on ${e.path}`).join('\n')}
-
-Based on this data, provide analysis in the following JSON format:
-{
-  "intent": "Brief description of what the user was likely trying to accomplish (1-2 sentences)",
-  "intentConfidence": "high|medium|low",
-  "summary": "2-3 sentence summary of the user's journey",
-  "engagement": "high|medium|low",
-  "engagementReason": "Why you rated engagement this way",
-  "keyInsights": [
-    "Specific insight 1",
-    "Specific insight 2",
-    "Specific insight 3"
-  ],
-  "mostEngagedSection": "Which part of the site they spent most time on",
-  "frictionPoints": ["Any points where user seemed confused or frustrated"],
-  "recommendations": ["Actionable recommendation based on this session"]
+function generateFallbackAnalysis(data: FlowAnalysisInput) {
+  return {
+    userMindset: {
+      state: 'unknown',
+      confidence: 'low',
+      description: 'Unable to determine user mindset without AI analysis'
+    },
+    primaryIntent: {
+      goal: 'Unknown',
+      confidence: 'low',
+      reasoning: 'Fallback analysis - AI unavailable'
+    },
+    intentSatisfaction: {
+      satisfied: 'unknown',
+      confidence: 'low',
+      evidence: []
+    },
+    journeySummary: `Session lasted ${data.sessionDuration ? Math.round(data.sessionDuration / 1000) : 0} seconds with ${data.pageViews} page views and ${data.clicks} clicks.`,
+    behavioralInsights: [
+      `Entered on ${data.entryPage || '/'}`,
+      `Exited from ${data.exitPage || '/'}`
+    ],
+    emotionalJourney: [],
+    frictionPoints: [],
+    recommendations: ['Enable AI analysis for detailed insights'],
+    source: 'fallback'
+  };
 }
 
-Return ONLY the JSON object, no other text.`;
+async function generateFlowAnalysis(data: FlowAnalysisInput) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    console.error('ANTHROPIC_API_KEY is not set');
+    return generateFallbackAnalysis(data);
+  }
+
+  const prompt = `You are an expert UX researcher and behavioral psychologist analyzing a user's session on a website. Your job is to infer the user's psychological state, their true intentions, and whether those intentions were satisfied based on their behavior.
+
+WEBSITE CONTEXT:
+- Site: ${data.siteContext.name} (${data.siteContext.domain})
+- Business Type: ${data.siteContext.businessType || 'Not specified - infer from domain and behavior'}
+- Description: ${data.siteContext.description || 'Not provided'}
+- Target Audience: ${data.siteContext.targetAudience || 'Not specified'}
+- Primary Goals: ${data.siteContext.primaryGoals.length > 0 ? data.siteContext.primaryGoals.join(', ') : 'Not specified'}
+${Object.keys(data.siteContext.pageContext).length > 0 ? `- Page Meanings: ${JSON.stringify(data.siteContext.pageContext)}` : ''}
+
+SESSION OVERVIEW:
+- Total Duration: ${data.sessionDuration ? Math.round(data.sessionDuration / 1000) : 0} seconds
+- Device: ${data.deviceType || 'unknown'}
+- Referrer: ${data.referrer || 'direct (typed URL or bookmark)'}
+- Entry Page: ${data.entryPage || '/'}
+- Exit Page: ${data.exitPage || '/'}
+- Bounced (single page, no interaction): ${data.isBounce ? 'Yes' : 'No'}
+- Max Scroll Depth: ${data.maxScrollDepth}%
+- Exit Intent Detected (mouse moved to close): ${data.exitIntentDetected ? 'Yes' : 'No'}
+
+PAGES VISITED & TIME SPENT:
+${Object.entries(data.timePerPage).map(([page, time]) => `- ${page}: ${Math.round(time / 1000)}s`).join('\n') || 'Single page visit'}
+
+CLICK BEHAVIOR (what they clicked and where):
+${data.clickDetails.map((c, i) => `${i + 1}. Clicked "${c.element}" (${c.elementType || 'element'}) on ${c.path}${c.href ? ` → navigating to ${c.href}` : ''}`).join('\n') || 'No clicks recorded'}
+
+NAVIGATION PATTERN:
+- Pages visited in order: ${data.uniquePages.join(' → ')}
+- Backtracking (went back to previous page): ${data.backtracks.length > 0 ? data.backtracks.map(b => `${b.from} ← ${b.to}`).join(', ') : 'None - linear path'}
+
+FULL EVENT SEQUENCE:
+${data.events.slice(0, 30).map((e, i) => {
+  let detail = '';
+  const eventData = e.data as Record<string, unknown> | null;
+  if (e.type === 'click' && eventData?.elementText) {
+    detail = ` - clicked "${eventData.elementText}"`;
+  } else if (e.type === 'scroll_milestone' && eventData?.depth) {
+    detail = ` - reached ${eventData.depth}% of page`;
+  } else if (e.type === 'pageview' && eventData?.title) {
+    detail = ` - "${eventData.title}"`;
+  }
+  return `${i + 1}. [${e.type}] ${e.path}${detail}`;
+}).join('\n')}
+
+Based on this behavioral data, provide a deep psychological analysis in this JSON format:
+
+{
+  "userMindset": {
+    "state": "One of: exploring, researching, comparing, ready-to-buy, confused, frustrated, curious, skeptical, urgent, casual-browsing",
+    "confidence": "high|medium|low",
+    "description": "2-3 sentences describing their mental/emotional state throughout the session. What were they thinking? What drove their actions?"
+  },
+  "primaryIntent": {
+    "goal": "Specific goal they were trying to achieve (e.g., 'Find pricing information', 'Understand what the product does', 'Contact the company', 'Compare features')",
+    "confidence": "high|medium|low", 
+    "reasoning": "What behavioral evidence supports this intent? Be specific about which actions revealed this."
+  },
+  "intentSatisfaction": {
+    "satisfied": "yes|no|partial|unclear",
+    "confidence": "high|medium|low",
+    "evidence": ["List specific behaviors that indicate whether they found what they were looking for", "e.g., 'Left quickly from pricing page suggests sticker shock' or 'Scrolled to bottom and clicked CTA suggests found what they needed'"]
+  },
+  "journeySummary": "3-4 sentence narrative of their journey from arrival to exit, written like you're telling a story. Include psychological interpretation of key moments.",
+  "behavioralInsights": [
+    "Specific insight about their behavior (e.g., 'Spent 45s on About page but only 5s on Services - suggests more interested in company credibility than offerings')",
+    "Another specific, non-obvious insight",
+    "Pattern you noticed that reveals something about their intent or satisfaction"
+  ],
+  "emotionalJourney": [
+    {"moment": "What happened", "emotion": "Likely emotional state", "evidence": "What behavior suggests this"},
+    {"moment": "Another key moment", "emotion": "Emotional state", "evidence": "Supporting behavior"}
+  ],
+  "frictionPoints": [
+    {"issue": "Specific problem they encountered", "evidence": "Behavior that revealed this", "impact": "How it affected their experience"}
+  ],
+  "recommendations": [
+    "Specific, actionable recommendation based on this user's behavior",
+    "Another recommendation"
+  ]
+}
+
+Be a behavioral detective. Look for:
+- Hesitation signals (long time on page without action, backtracking)
+- Interest signals (deep scrolling, multiple clicks, time spent reading)
+- Frustration signals (rapid clicking, exit intent, quick exits)
+- Intent clarity (direct navigation vs. wandering)
+- Satisfaction signals (completed actions, found what they searched for)
+
+Return ONLY the JSON object.`;
 
   try {
+    console.log('Calling Anthropic API for deep flow analysis...');
+    
+    const anthropic = new Anthropic({ apiKey });
+    
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 1000,
+      max_tokens: 2000,
       messages: [{ role: 'user', content: prompt }],
     });
+
+    console.log('Anthropic API response received');
 
     const content = response.content[0];
     if (content.type === 'text') {
       const jsonMatch = content.text.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]);
+        const parsed = JSON.parse(jsonMatch[0]);
+        return { ...parsed, source: 'ai' };
       }
     }
+    
+    console.error('Could not parse AI response');
+    return generateFallbackAnalysis(data);
   } catch (error) {
-    console.error('Error generating flow analysis:', error);
+    console.error('Error calling Anthropic API:', error);
+    return generateFallbackAnalysis(data);
   }
-
-  // Fallback analysis
-  return {
-    intent: data.isBounce 
-      ? "User briefly visited but didn't find what they were looking for"
-      : `User explored ${data.uniquePages.length} pages, likely researching or browsing`,
-    intentConfidence: 'low',
-    summary: `Session lasted ${data.sessionDuration ? Math.round(data.sessionDuration / 1000) : 0} seconds with ${data.pageViews} page views and ${data.clicks} clicks.`,
-    engagement: data.sessionDuration && data.sessionDuration > 60000 ? 'high' : data.sessionDuration && data.sessionDuration > 20000 ? 'medium' : 'low',
-    engagementReason: `Based on session duration and interaction count`,
-    keyInsights: [
-      `Entered on ${data.entryPage || '/'}`,
-      data.backtracks.length > 0 ? `Backtracked ${data.backtracks.length} time(s)` : 'Linear navigation pattern',
-      `Most active on ${Object.entries(data.clicksByPage).sort((a, b) => b[1] - a[1])[0]?.[0] || data.entryPage || '/'}`
-    ],
-    mostEngagedSection: data.mostEngagedPage ? data.mostEngagedPage[0] : data.entryPage || '/',
-    frictionPoints: data.backtracks.length > 2 ? ['Multiple backtracks suggest navigation confusion'] : [],
-    recommendations: ['Monitor this user pattern for optimization opportunities']
-  };
 }

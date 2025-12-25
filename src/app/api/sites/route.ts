@@ -39,6 +39,41 @@ export async function POST(request: NextRequest) {
   }
 }
 
+// Update site context for AI analysis
+export async function PUT(request: NextRequest) {
+  try {
+    const { 
+      siteId, 
+      businessType, 
+      description, 
+      targetAudience, 
+      primaryGoals, 
+      pageContext 
+    } = await request.json();
+
+    if (!siteId) {
+      return NextResponse.json({ error: 'Site ID is required' }, { status: 400 });
+    }
+
+    const [updatedSite] = await db
+      .update(sites)
+      .set({
+        businessType,
+        description,
+        targetAudience,
+        primaryGoals,
+        pageContext
+      })
+      .where(eq(sites.id, siteId))
+      .returning();
+
+    return NextResponse.json({ site: updatedSite });
+  } catch (error) {
+    console.error('Error updating site:', error);
+    return NextResponse.json({ error: 'Failed to update site' }, { status: 500 });
+  }
+}
+
 export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);

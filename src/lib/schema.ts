@@ -7,6 +7,12 @@ export const sites = pgTable('sites', {
   apiKey: text('api_key').notNull().unique(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   isActive: boolean('is_active').default(true).notNull(),
+  // Site context for AI analysis
+  businessType: text('business_type'), // e.g., "medical technology company", "e-commerce", "SaaS"
+  description: text('description'), // What the site/business does
+  targetAudience: text('target_audience'), // Who visits this site
+  primaryGoals: jsonb('primary_goals'), // Array of goals: ["generate leads", "sell products", "educate visitors"]
+  pageContext: jsonb('page_context'), // Object mapping paths to descriptions: {"/": "Homepage with hero and features", "/contact": "Contact form for inquiries"}
 });
 
 export const events = pgTable('events', {
@@ -83,6 +89,6 @@ export const userFlows = pgTable('user_flows', {
   exitPage: text('exit_page'),
   deviceType: text('device_type'),
   country: text('country'),
-  flowPath: jsonb('flow_path'), // Array of {type, path, timestamp, details}
+  flowPath: jsonb('flow_path'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });

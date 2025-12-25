@@ -42,16 +42,40 @@ interface Pagination {
   totalPages: number;
 }
 
+interface EmotionalMoment {
+  moment: string;
+  emotion: string;
+  evidence: string;
+}
+
+interface FrictionPoint {
+  issue: string;
+  evidence: string;
+  impact: string;
+}
+
 interface FlowAnalysis {
-  intent: string;
-  intentConfidence: 'high' | 'medium' | 'low';
-  summary: string;
-  engagement: 'high' | 'medium' | 'low';
-  engagementReason: string;
-  keyInsights: string[];
-  mostEngagedSection: string;
-  frictionPoints: string[];
+  userMindset: {
+    state: string;
+    confidence: 'high' | 'medium' | 'low';
+    description: string;
+  };
+  primaryIntent: {
+    goal: string;
+    confidence: 'high' | 'medium' | 'low';
+    reasoning: string;
+  };
+  intentSatisfaction: {
+    satisfied: 'yes' | 'no' | 'partial' | 'unclear';
+    confidence: 'high' | 'medium' | 'low';
+    evidence: string[];
+  };
+  journeySummary: string;
+  behavioralInsights: string[];
+  emotionalJourney: EmotionalMoment[];
+  frictionPoints: FrictionPoint[];
   recommendations: string[];
+  source?: string;
 }
 
 interface FlowSummary {
@@ -84,7 +108,7 @@ export default function FlowsPage() {
   const [analyzing, setAnalyzing] = useState(false);
   const [period, setPeriod] = useState('7d');
   const [page, setPage] = useState(1);
-  const [activeTab, setActiveTab] = useState<'timeline' | 'analysis'>('analysis');
+  const [activeTab, setActiveTab] = useState<'analysis' | 'timeline'>('analysis');
 
   useEffect(() => {
     fetchSites();
@@ -195,22 +219,47 @@ export default function FlowsPage() {
     }
   };
 
-  const getEngagementColor = (level: string) => {
-    switch (level) {
-      case 'high': return 'bg-emerald-100 text-emerald-800';
-      case 'medium': return 'bg-amber-100 text-amber-800';
-      case 'low': return 'bg-red-100 text-red-800';
-      default: return 'bg-slate-100 text-slate-800';
+  const getMindsetEmoji = (state: string) => {
+    const mindsets: Record<string, string> = {
+      'exploring': '🔍',
+      'researching': '📚',
+      'comparing': '⚖️',
+      'ready-to-buy': '💳',
+      'confused': '😕',
+      'frustrated': '😤',
+      'curious': '🤔',
+      'skeptical': '🧐',
+      'urgent': '⚡',
+      'casual-browsing': '😌'
+    };
+    return mindsets[state] || '🧠';
+  };
+
+  const getSatisfactionColor = (satisfied: string) => {
+    switch (satisfied) {
+      case 'yes': return 'bg-emerald-100 text-emerald-800 border-emerald-200';
+      case 'no': return 'bg-red-100 text-red-800 border-red-200';
+      case 'partial': return 'bg-amber-100 text-amber-800 border-amber-200';
+      default: return 'bg-slate-100 text-slate-800 border-slate-200';
     }
   };
 
-  const getConfidenceColor = (level: string) => {
-    switch (level) {
-      case 'high': return 'text-emerald-600';
-      case 'medium': return 'text-amber-600';
-      case 'low': return 'text-slate-400';
-      default: return 'text-slate-400';
+  const getSatisfactionLabel = (satisfied: string) => {
+    switch (satisfied) {
+      case 'yes': return '✅ Intent Satisfied';
+      case 'no': return '❌ Intent Not Satisfied';
+      case 'partial': return '⚠️ Partially Satisfied';
+      default: return '❓ Unclear';
     }
+  };
+
+  const getConfidenceBadge = (confidence: string) => {
+    const colors: Record<string, string> = {
+      high: 'bg-emerald-100 text-emerald-700',
+      medium: 'bg-amber-100 text-amber-700',
+      low: 'bg-slate-100 text-slate-500'
+    };
+    return colors[confidence] || colors.low;
   };
 
   const getEventDetail = (event: FlowEvent) => {
@@ -362,9 +411,9 @@ export default function FlowsPage() {
                 <div className="p-6 border-b border-slate-200">
                   <div className="flex justify-between items-start mb-4">
                     <div>
-                      <h2 className="text-lg font-semibold text-slate-900">Session Details</h2>
+                      <h2 className="text-lg font-semibold text-slate-900">Session Analysis</h2>
                       <p className="text-sm text-slate-500">
-                        Started {formatTime(selectedFlow.startedAt)}
+                        {formatTime(selectedFlow.startedAt)} • {formatDuration(selectedFlow.duration)}
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
@@ -375,28 +424,28 @@ export default function FlowsPage() {
                           disabled={analyzing}
                           className="px-3 py-1.5 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 disabled:opacity-50"
                         >
-                          {analyzing ? 'Analyzing...' : '✨ Analyze with AI'}
+                          {analyzing ? 'Analyzing...' : '🧠 Analyze Behavior'}
                         </button>
                       )}
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div className="bg-slate-50 rounded-lg p-3">
-                      <p className="text-xs text-slate-500">Duration</p>
-                      <p className="text-lg font-semibold text-slate-900">{formatDuration(selectedFlow.duration)}</p>
-                    </div>
-                    <div className="bg-slate-50 rounded-lg p-3">
+                  <div className="grid grid-cols-4 gap-4">
+                    <div className="bg-slate-50 rounded-lg p-3 text-center">
+                      <p className="text-2xl font-bold text-slate-900">{flowDetail.summary.pageViews}</p>
                       <p className="text-xs text-slate-500">Pages</p>
-                      <p className="text-lg font-semibold text-slate-900">{flowDetail.summary.pageViews}</p>
                     </div>
-                    <div className="bg-slate-50 rounded-lg p-3">
+                    <div className="bg-slate-50 rounded-lg p-3 text-center">
+                      <p className="text-2xl font-bold text-slate-900">{flowDetail.summary.clicks}</p>
                       <p className="text-xs text-slate-500">Clicks</p>
-                      <p className="text-lg font-semibold text-slate-900">{flowDetail.summary.clicks}</p>
                     </div>
-                    <div className="bg-slate-50 rounded-lg p-3">
+                    <div className="bg-slate-50 rounded-lg p-3 text-center">
+                      <p className="text-2xl font-bold text-slate-900">{flowDetail.summary.totalEvents}</p>
                       <p className="text-xs text-slate-500">Events</p>
-                      <p className="text-lg font-semibold text-slate-900">{flowDetail.summary.totalEvents}</p>
+                    </div>
+                    <div className="bg-slate-50 rounded-lg p-3 text-center">
+                      <p className="text-2xl font-bold text-slate-900">{flowDetail.summary.backtracks.length}</p>
+                      <p className="text-xs text-slate-500">Backtracks</p>
                     </div>
                   </div>
                 </div>
@@ -412,7 +461,7 @@ export default function FlowsPage() {
                           : 'border-transparent text-slate-500 hover:text-slate-700'
                       }`}
                     >
-                      AI Analysis
+                      🧠 Psychological Analysis
                     </button>
                     <button
                       onClick={() => setActiveTab('timeline')}
@@ -422,101 +471,127 @@ export default function FlowsPage() {
                           : 'border-transparent text-slate-500 hover:text-slate-700'
                       }`}
                     >
-                      Event Timeline
+                      📋 Event Timeline
                     </button>
                   </div>
                 </div>
 
-                <div className="p-6">
+                <div className="p-6 max-h-[calc(100vh-400px)] overflow-y-auto">
                   {activeTab === 'analysis' ? (
-                    flowDetail.analysis ? (
+                    flowDetail.analysis && flowDetail.analysis.source === 'ai' ? (
                       <div className="space-y-6">
-                        {/* Intent */}
-                        <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl p-5">
-                          <div className="flex items-start justify-between mb-2">
-                            <h3 className="font-semibold text-slate-900">🎯 User Intent</h3>
-                            <span className={`text-xs font-medium ${getConfidenceColor(flowDetail.analysis.intentConfidence)}`}>
-                              {flowDetail.analysis.intentConfidence} confidence
+                        {/* User Mindset */}
+                        <div className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl p-5 border border-purple-100">
+                          <div className="flex items-center gap-3 mb-3">
+                            <span className="text-3xl">{getMindsetEmoji(flowDetail.analysis.userMindset.state)}</span>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <h3 className="font-semibold text-slate-900">User Mindset: {flowDetail.analysis.userMindset.state.replace('-', ' ')}</h3>
+                                <span className={`px-2 py-0.5 rounded text-xs font-medium ${getConfidenceBadge(flowDetail.analysis.userMindset.confidence)}`}>
+                                  {flowDetail.analysis.userMindset.confidence} confidence
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          <p className="text-slate-700">{flowDetail.analysis.userMindset.description}</p>
+                        </div>
+
+                        {/* Primary Intent */}
+                        <div className="bg-blue-50 rounded-xl p-5 border border-blue-100">
+                          <div className="flex items-center justify-between mb-2">
+                            <h3 className="font-semibold text-slate-900">🎯 Primary Intent</h3>
+                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${getConfidenceBadge(flowDetail.analysis.primaryIntent.confidence)}`}>
+                              {flowDetail.analysis.primaryIntent.confidence} confidence
                             </span>
                           </div>
-                          <p className="text-slate-700">{flowDetail.analysis.intent}</p>
+                          <p className="text-lg font-medium text-blue-800 mb-2">{flowDetail.analysis.primaryIntent.goal}</p>
+                          <p className="text-sm text-slate-600">{flowDetail.analysis.primaryIntent.reasoning}</p>
                         </div>
 
-                        {/* Summary */}
-                        <div>
-                          <h3 className="font-semibold text-slate-900 mb-2">📝 Summary</h3>
-                          <p className="text-slate-600">{flowDetail.analysis.summary}</p>
-                        </div>
-
-                        {/* Engagement & Most Engaged */}
-                        <div className="grid md:grid-cols-2 gap-4">
-                          <div className="bg-slate-50 rounded-lg p-4">
-                            <h3 className="font-semibold text-slate-900 mb-2">📊 Engagement Level</h3>
-                            <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${getEngagementColor(flowDetail.analysis.engagement)}`}>
-                              {flowDetail.analysis.engagement.charAt(0).toUpperCase() + flowDetail.analysis.engagement.slice(1)}
+                        {/* Intent Satisfaction */}
+                        <div className={`rounded-xl p-5 border ${getSatisfactionColor(flowDetail.analysis.intentSatisfaction.satisfied)}`}>
+                          <div className="flex items-center justify-between mb-3">
+                            <h3 className="font-semibold">{getSatisfactionLabel(flowDetail.analysis.intentSatisfaction.satisfied)}</h3>
+                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${getConfidenceBadge(flowDetail.analysis.intentSatisfaction.confidence)}`}>
+                              {flowDetail.analysis.intentSatisfaction.confidence} confidence
                             </span>
-                            <p className="text-sm text-slate-500 mt-2">{flowDetail.analysis.engagementReason}</p>
                           </div>
-                          <div className="bg-slate-50 rounded-lg p-4">
-                            <h3 className="font-semibold text-slate-900 mb-2">🔥 Most Engaged Section</h3>
-                            <p className="text-indigo-600 font-medium">{flowDetail.analysis.mostEngagedSection}</p>
-                            {flowDetail.summary.mostEngagedPage && (
-                              <p className="text-sm text-slate-500 mt-1">
-                                Spent {formatDuration(flowDetail.summary.mostEngagedPage.duration)} here
-                              </p>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Key Insights */}
-                        <div>
-                          <h3 className="font-semibold text-slate-900 mb-3">💡 Key Insights</h3>
-                          <ul className="space-y-2">
-                            {flowDetail.analysis.keyInsights.map((insight, i) => (
-                              <li key={i} className="flex items-start gap-2">
-                                <span className="text-indigo-500 mt-1">•</span>
-                                <span className="text-slate-600">{insight}</span>
+                          <ul className="space-y-1">
+                            {flowDetail.analysis.intentSatisfaction.evidence.map((e, i) => (
+                              <li key={i} className="text-sm flex items-start gap-2">
+                                <span className="mt-1">•</span>
+                                <span>{e}</span>
                               </li>
                             ))}
                           </ul>
                         </div>
 
-                        {/* Backtracking */}
-                        {flowDetail.summary.backtracks.length > 0 && (
-                          <div className="bg-amber-50 rounded-lg p-4">
-                            <h3 className="font-semibold text-amber-800 mb-2">🔄 Backtracking Detected</h3>
-                            <p className="text-sm text-amber-700 mb-2">
-                              User returned to previously visited pages {flowDetail.summary.backtracks.length} time(s):
-                            </p>
-                            <ul className="space-y-1">
-                              {flowDetail.summary.backtracks.map((bt, i) => (
-                                <li key={i} className="text-sm text-amber-600">
-                                  {bt.from} → {bt.to}
-                                </li>
+                        {/* Journey Summary */}
+                        <div>
+                          <h3 className="font-semibold text-slate-900 mb-2">📖 Journey Story</h3>
+                          <p className="text-slate-700 leading-relaxed">{flowDetail.analysis.journeySummary}</p>
+                        </div>
+
+                        {/* Emotional Journey */}
+                        {flowDetail.analysis.emotionalJourney && flowDetail.analysis.emotionalJourney.length > 0 && (
+                          <div>
+                            <h3 className="font-semibold text-slate-900 mb-3">💭 Emotional Journey</h3>
+                            <div className="space-y-3">
+                              {flowDetail.analysis.emotionalJourney.map((moment, i) => (
+                                <div key={i} className="flex items-start gap-3 bg-slate-50 rounded-lg p-3">
+                                  <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-sm font-medium text-indigo-600">
+                                    {i + 1}
+                                  </div>
+                                  <div>
+                                    <p className="font-medium text-slate-900">{moment.moment}</p>
+                                    <p className="text-sm text-indigo-600">Feeling: {moment.emotion}</p>
+                                    <p className="text-sm text-slate-500">{moment.evidence}</p>
+                                  </div>
+                                </div>
                               ))}
-                            </ul>
+                            </div>
                           </div>
                         )}
 
+                        {/* Behavioral Insights */}
+                        <div>
+                          <h3 className="font-semibold text-slate-900 mb-3">🔬 Behavioral Insights</h3>
+                          <ul className="space-y-2">
+                            {flowDetail.analysis.behavioralInsights.map((insight, i) => (
+                              <li key={i} className="flex items-start gap-2 bg-slate-50 rounded-lg p-3">
+                                <span className="text-indigo-500 mt-0.5">💡</span>
+                                <span className="text-slate-700">{insight}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+
                         {/* Friction Points */}
-                        {flowDetail.analysis.frictionPoints.length > 0 && (
-                          <div className="bg-red-50 rounded-lg p-4">
-                            <h3 className="font-semibold text-red-800 mb-2">⚠️ Potential Friction Points</h3>
-                            <ul className="space-y-1">
+                        {flowDetail.analysis.frictionPoints && flowDetail.analysis.frictionPoints.length > 0 && (
+                          <div>
+                            <h3 className="font-semibold text-slate-900 mb-3">⚠️ Friction Points</h3>
+                            <div className="space-y-3">
                               {flowDetail.analysis.frictionPoints.map((point, i) => (
-                                <li key={i} className="text-sm text-red-700">• {point}</li>
+                                <div key={i} className="bg-red-50 border border-red-100 rounded-lg p-4">
+                                  <p className="font-medium text-red-800">{point.issue}</p>
+                                  <p className="text-sm text-red-700 mt-1">Evidence: {point.evidence}</p>
+                                  <p className="text-sm text-red-600 mt-1">Impact: {point.impact}</p>
+                                </div>
                               ))}
-                            </ul>
+                            </div>
                           </div>
                         )}
 
                         {/* Recommendations */}
-                        {flowDetail.analysis.recommendations.length > 0 && (
-                          <div className="bg-emerald-50 rounded-lg p-4">
-                            <h3 className="font-semibold text-emerald-800 mb-2">✅ Recommendations</h3>
-                            <ul className="space-y-1">
+                        {flowDetail.analysis.recommendations && flowDetail.analysis.recommendations.length > 0 && (
+                          <div>
+                            <h3 className="font-semibold text-slate-900 mb-3">✅ Recommendations</h3>
+                            <ul className="space-y-2">
                               {flowDetail.analysis.recommendations.map((rec, i) => (
-                                <li key={i} className="text-sm text-emerald-700">• {rec}</li>
+                                <li key={i} className="flex items-start gap-2 bg-emerald-50 border border-emerald-100 rounded-lg p-3">
+                                  <span className="text-emerald-600 mt-0.5">→</span>
+                                  <span className="text-emerald-800">{rec}</span>
+                                </li>
                               ))}
                             </ul>
                           </div>
@@ -525,7 +600,7 @@ export default function FlowsPage() {
                         {/* Time Per Page */}
                         {Object.keys(flowDetail.summary.timePerPage).length > 0 && (
                           <div>
-                            <h3 className="font-semibold text-slate-900 mb-3">⏱️ Time Spent Per Page</h3>
+                            <h3 className="font-semibold text-slate-900 mb-3">⏱️ Time Investment</h3>
                             <div className="space-y-2">
                               {Object.entries(flowDetail.summary.timePerPage)
                                 .sort((a, b) => b[1] - a[1])
@@ -553,17 +628,29 @@ export default function FlowsPage() {
                       </div>
                     ) : (
                       <div className="text-center py-12">
-                        <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                          <span className="text-3xl">✨</span>
+                        <div className="w-20 h-20 bg-gradient-to-br from-purple-100 to-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                          <span className="text-4xl">🧠</span>
                         </div>
-                        <h3 className="text-lg font-medium text-slate-900 mb-2">AI Analysis Available</h3>
-                        <p className="text-slate-500 mb-4">Get insights about user intent, engagement, and recommendations</p>
+                        <h3 className="text-lg font-medium text-slate-900 mb-2">Behavioral Analysis</h3>
+                        <p className="text-slate-500 mb-6 max-w-md mx-auto">
+                          Understand what this user was thinking, what they wanted to achieve, and whether they succeeded.
+                        </p>
                         <button
                           onClick={() => fetchFlowDetail(selectedFlow.sessionId, true)}
                           disabled={analyzing}
-                          className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+                          className="px-6 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg hover:from-purple-700 hover:to-indigo-700 disabled:opacity-50 font-medium"
                         >
-                          {analyzing ? 'Analyzing...' : 'Generate AI Analysis'}
+                          {analyzing ? (
+                            <span className="flex items-center gap-2">
+                              <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                              </svg>
+                              Analyzing user psychology...
+                            </span>
+                          ) : (
+                            '🧠 Analyze User Psychology'
+                          )}
                         </button>
                       </div>
                     )
@@ -599,14 +686,11 @@ export default function FlowsPage() {
               </div>
             ) : (
               <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
-                <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <svg className="w-8 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                  </svg>
+                <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <span className="text-4xl">👤</span>
                 </div>
                 <h3 className="text-lg font-medium text-slate-900 mb-2">Select a Session</h3>
-                <p className="text-slate-500">Click on a session from the list to view the complete user flow and AI analysis</p>
+                <p className="text-slate-500">Click on a session to understand user behavior and intent</p>
               </div>
             )}
           </div>
