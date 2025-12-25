@@ -24,13 +24,15 @@
   let interactionCount = 0;
 
   // Frustration detection state
-  let recentClicks = []; // { time, x, y, element }
-  let mouseMovements = []; // { time, x, y }
+  let recentClicks = [];
+  let mouseMovements = [];
   let lastMousePosition = { x: 0, y: 0 };
-  let formFieldsInteracted = []; // Track form field order
-  let lastFormField = null;
   let deadClickCount = 0;
   let rageClickCount = 0;
+
+  // Form tracking state
+  let activeForms = new Map(); // formElement -> { startTime, fieldsInteracted, lastField, submitted }
+  let formObserver = null;
 
   function generateId() {
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
@@ -83,7 +85,6 @@
 
   function getElementSelector(element) {
     if (!element) return null;
-    
     let selector = element.tagName.toLowerCase();
     if (element.id) {
       selector += '#' + element.id;
@@ -158,14 +159,227 @@
   }
 
   // ==========================================
+  // FORM TRACKING
+  // ==========================================
+
+  function getFieldLabel(field) {
+    if (field.id) {
+      const label = document.querySelector(`label[for="${field.id}"]`);
+      if (label) return label.innerText.trim().slice(0, 50);
+    }
+    const parentLabel = field.closest('label');
+    if (parentLabel) return parentLabel.innerText.trim().slice(0, 50);
+    return field.placeholder || field.name || null;
+  }
+
+  function getFormInfo(form) {
+    if (!form) return null;
+    const inputs = form.querySelectorAll('input, select, textarea');
+    const filledFields = Array.from(inputs).filter(f => f.value && f.value.trim() !== '').length;
+    return {
+      formId: form.id || null,
+      formName: form.name || null,
+      formAction: form.action || null,
+      totalFields: inputs.length,
+      filledFields: filledFields,
+      completionRate: inputs.length > 0 ? Math.round((filledFields / inputs.length) * 100) : 0
+    };
+  }
+
+  function startTrackingForm(form) {
+    if (!form || activeForms.has(form)) return;
+    
+    activeForms.set(form, {
+      startTime: Date.now(),
+      fieldsInteracted: [],
+      lastField: null,
+      submitted: false
+    });
+
+    sendEvent('form_start', {
+      ...getFormInfo(form)
+    });
+  }
+
+  function trackFormFieldInteraction(field) {
+    const form = field.closest('form');
+    if (!form) return;
+
+    // Start tracking if not already
+    if (!activeForms.has(form)) {
+      startTrackingForm(form);
+    }
+
+    const formData = activeForms.get(form);
+    const fieldName = field.name || field.id || field.type;
+    
+    // Track field order
+    if (!formData.fieldsInteracted.includes(fieldName)) {
+      formData.fieldsInteracted.push(fieldName);
+    }
+    formData.lastField = {
+      name: fieldName,
+      label: getFieldLabel(field),
+      type: field.type || field.tagName.toLowerCase()
+    };
+
+    // Check if previous field was skipped (left empty)
+    const inputs = Array.from(form.querySelectorAll('input, select, textarea'));
+    const currentIndex = inputs.indexOf(field);
+    
+    if (currentIndex > 0) {
+      const previousField = inputs[currentIndex - 1];
+      const isSensitive = ['password'].includes(previousField.type);
+      
+      if (!isSensitive && !previousField.value && previousField.required !== false) {
+        sendEvent('form_field_skip', {
+          ...getFormInfo(form),
+          skippedField: previousField.name || previousField.id || 'unknown',
+          skippedFieldLabel: getFieldLabel(previousField),
+          skippedFieldType: previousField.type || previousField.tagName.toLowerCase(),
+          movedToField: fieldName
+        });
+      }
+    }
+  }
+
+  function checkFormAbandonment(form, reason) {
+    if (!form || !activeForms.has(form)) return;
+    
+    const formData = activeForms.get(form);
+    
+    // Don't report if already submitted
+    if (formData.submitted) {
+      activeForms.delete(form);
+      return;
+    }
+
+    const formInfo = getFormInfo(form);
+    
+    // Only report abandonment if user actually interacted with the form
+    if (formData.fieldsInteracted.length > 0 && formInfo.filledFields > 0) {
+      sendEvent('form_abandonment', {
+        ...formInfo,
+        reason: reason,
+        fieldsInteracted: formData.fieldsInteracted,
+        lastFieldInteracted: formData.lastField?.name || null,
+        lastFieldLabel: formData.lastField?.label || null,
+        timeInForm: Date.now() - formData.startTime
+      });
+    }
+
+    activeForms.delete(form);
+  }
+
+  function trackFormSubmit(form) {
+    if (!form) return;
+    
+    if (activeForms.has(form)) {
+      const formData = activeForms.get(form);
+      formData.submitted = true;
+      
+      sendEvent('form_submit', {
+        ...getFormInfo(form),
+        fieldsInteracted: formData.fieldsInteracted.length,
+        timeToComplete: Date.now() - formData.startTime
+      });
+      
+      activeForms.delete(form);
+    } else {
+      sendEvent('form_submit', {
+        ...getFormInfo(form)
+      });
+    }
+  }
+
+  // Watch for forms being removed from DOM (modal closed, etc.)
+  function setupFormObserver() {
+    if (formObserver) return;
+
+    formObserver = new MutationObserver(function(mutations) {
+      mutations.forEach(function(mutation) {
+        mutation.removedNodes.forEach(function(node) {
+          if (node.nodeType !== 1) return;
+          
+          // Check if a tracked form was removed
+          if (node.tagName === 'FORM' && activeForms.has(node)) {
+            checkFormAbandonment(node, 'form_removed');
+          }
+          
+          // Check if a container with a tracked form was removed
+          const forms = node.querySelectorAll ? node.querySelectorAll('form') : [];
+          forms.forEach(function(form) {
+            if (activeForms.has(form)) {
+              checkFormAbandonment(form, 'container_removed');
+            }
+          });
+        });
+      });
+    });
+
+    formObserver.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
+  }
+
+  // Detect cancel/close button clicks
+  function detectFormCancelClick(event) {
+    const target = event.target;
+    const buttonText = (target.innerText || target.value || '').toLowerCase();
+    const buttonType = target.type?.toLowerCase();
+    
+    // Check if this looks like a cancel/close button
+    const cancelPatterns = ['cancel', 'close', 'dismiss', 'nevermind', 'no thanks', 'not now', 'skip'];
+    const isCancelButton = cancelPatterns.some(pattern => buttonText.includes(pattern)) ||
+                          buttonType === 'reset' ||
+                          target.classList.contains('close') ||
+                          target.classList.contains('cancel') ||
+                          target.getAttribute('data-dismiss') ||
+                          target.getAttribute('aria-label')?.toLowerCase().includes('close');
+
+    if (isCancelButton) {
+      // Find the nearest form (could be in a modal/dialog)
+      let container = target.closest('form, [role="dialog"], .modal, .dialog, [class*="modal"], [class*="dialog"]');
+      let form = null;
+      
+      if (container?.tagName === 'FORM') {
+        form = container;
+      } else if (container) {
+        form = container.querySelector('form');
+      }
+      
+      // Also check parent containers
+      if (!form) {
+        const parents = [target.closest('.modal'), target.closest('.dialog'), target.closest('[role="dialog"]')];
+        for (const parent of parents) {
+          if (parent) {
+            form = parent.querySelector('form');
+            if (form) break;
+          }
+        }
+      }
+
+      if (form && activeForms.has(form)) {
+        // Small delay to let form be removed if it will be
+        setTimeout(function() {
+          if (activeForms.has(form)) {
+            checkFormAbandonment(form, 'cancel_clicked');
+          }
+        }, 100);
+      }
+    }
+  }
+
+  // ==========================================
   // FRUSTRATION SIGNAL DETECTION
   // ==========================================
 
   function detectRageClick(event) {
     const now = Date.now();
-    const threshold = 500; // 500ms window
-    const distanceThreshold = 50; // pixels
-    const clickThreshold = 3; // 3+ clicks = rage click
+    const threshold = 500;
+    const distanceThreshold = 50;
+    const clickThreshold = 3;
 
     recentClicks.push({
       time: now,
@@ -174,10 +388,8 @@
       element: getElementSelector(event.target)
     });
 
-    // Remove clicks older than threshold
     recentClicks = recentClicks.filter(c => now - c.time < threshold);
 
-    // Check if we have enough rapid clicks in same area
     if (recentClicks.length >= clickThreshold) {
       const firstClick = recentClicks[0];
       const allInSameArea = recentClicks.every(c => 
@@ -197,7 +409,7 @@
           elementText: (event.target.innerText || '').slice(0, 100).trim(),
           totalRageClicks: rageClickCount
         });
-        recentClicks = []; // Reset after detecting
+        recentClicks = [];
         return true;
       }
     }
@@ -207,7 +419,6 @@
   function detectDeadClick(event) {
     const target = event.target;
     
-    // Check if element looks clickable but isn't actually interactive
     const looksClickable = (
       target.style.cursor === 'pointer' ||
       window.getComputedStyle(target).cursor === 'pointer' ||
@@ -239,16 +450,14 @@
 
   function detectMouseThrashing() {
     const now = Date.now();
-    const windowMs = 1000; // 1 second window
-    const threshold = 500; // Total distance threshold for "chaotic"
-    const directionChanges = 4; // Minimum direction changes
+    const windowMs = 1000;
+    const threshold = 500;
+    const directionChanges = 4;
 
-    // Keep only recent movements
     mouseMovements = mouseMovements.filter(m => now - m.time < windowMs);
 
     if (mouseMovements.length < 10) return false;
 
-    // Calculate total distance and direction changes
     let totalDistance = 0;
     let changes = 0;
     let lastDirection = null;
@@ -261,7 +470,6 @@
       const dy = curr.y - prev.y;
       totalDistance += Math.sqrt(dx * dx + dy * dy);
 
-      // Determine direction (simplified to 4 quadrants)
       const direction = (dx > 0 ? 'R' : 'L') + (dy > 0 ? 'D' : 'U');
       if (lastDirection && direction !== lastDirection) {
         changes++;
@@ -276,80 +484,10 @@
         duration: now - mouseMovements[0].time,
         movementCount: mouseMovements.length
       });
-      mouseMovements = []; // Reset after detecting
+      mouseMovements = [];
       return true;
     }
     return false;
-  }
-
-  function trackFormFieldAbandonment(currentField) {
-    if (lastFormField && lastFormField !== currentField) {
-      const fieldInfo = {
-        fieldName: lastFormField.name || lastFormField.id || 'unknown',
-        fieldType: lastFormField.type || lastFormField.tagName.toLowerCase(),
-        fieldLabel: getFieldLabel(lastFormField),
-        wasEmpty: !lastFormField.value || lastFormField.value.trim() === '',
-        nextField: currentField ? (currentField.name || currentField.id || 'unknown') : 'none'
-      };
-
-      // Track field order for form abandonment analysis
-      const fieldId = fieldInfo.fieldName || fieldInfo.fieldType;
-      if (!formFieldsInteracted.includes(fieldId)) {
-        formFieldsInteracted.push(fieldId);
-      }
-
-      // If field was left empty, it might be a friction point
-      if (fieldInfo.wasEmpty) {
-        sendEvent('form_field_skip', {
-          ...fieldInfo,
-          fieldOrder: formFieldsInteracted.length,
-          formId: lastFormField.closest('form')?.id || null,
-          formName: lastFormField.closest('form')?.name || null
-        });
-      }
-    }
-    lastFormField = currentField;
-  }
-
-  function getFieldLabel(field) {
-    // Try to find associated label
-    if (field.id) {
-      const label = document.querySelector(`label[for="${field.id}"]`);
-      if (label) return label.innerText.trim().slice(0, 50);
-    }
-    // Check for parent label
-    const parentLabel = field.closest('label');
-    if (parentLabel) return parentLabel.innerText.trim().slice(0, 50);
-    // Use placeholder or name
-    return field.placeholder || field.name || null;
-  }
-
-  function trackFormAbandonment() {
-    // Called on page exit - check if user was in a form
-    const activeForm = document.activeElement?.closest('form');
-    if (activeForm || formFieldsInteracted.length > 0) {
-      const form = activeForm || document.querySelector('form');
-      if (form) {
-        const totalFields = form.querySelectorAll('input, select, textarea').length;
-        const filledFields = Array.from(form.querySelectorAll('input, select, textarea'))
-          .filter(f => f.value && f.value.trim() !== '').length;
-
-        if (filledFields > 0 && filledFields < totalFields) {
-          // Form was partially filled but not submitted
-          sendEvent('form_abandonment', {
-            formId: form.id || null,
-            formName: form.name || null,
-            formAction: form.action || null,
-            totalFields: totalFields,
-            filledFields: filledFields,
-            fieldsInteracted: formFieldsInteracted,
-            lastFieldInteracted: lastFormField ? (lastFormField.name || lastFormField.id) : null,
-            completionRate: Math.round((filledFields / totalFields) * 100),
-            timeInForm: Date.now() - pageEntryTime
-          });
-        }
-      }
-    }
   }
 
   // ==========================================
@@ -368,9 +506,12 @@
     clickCount++;
     const target = event.target;
     
-    // Check for frustration signals first
+    // Check for frustration signals
     const isRageClick = detectRageClick(event);
     const isDeadClick = !isRageClick && detectDeadClick(event);
+    
+    // Check for form cancel clicks
+    detectFormCancelClick(event);
     
     const clickableParent = target.closest('a, button, [role="button"], input[type="submit"], input[type="button"]');
     
@@ -404,7 +545,6 @@
   function trackMouseMove(event) {
     const now = Date.now();
     
-    // Throttle: only track every 50ms
     if (mouseMovements.length > 0 && now - mouseMovements[mouseMovements.length - 1].time < 50) {
       return;
     }
@@ -415,12 +555,8 @@
       y: event.clientY
     });
 
-    // Keep only last 2 seconds of movements
     mouseMovements = mouseMovements.filter(m => now - m.time < 2000);
-
-    // Check for mouse thrashing
     detectMouseThrashing();
-
     lastMousePosition = { x: event.clientX, y: event.clientY };
   }
 
@@ -430,7 +566,6 @@
       maxScrollDepth = depth;
     }
     
-    // Send scroll event at 25%, 50%, 75%, 90%, 100% milestones
     const milestones = [25, 50, 75, 90, 100];
     for (const milestone of milestones) {
       if (maxScrollDepth >= milestone && lastScrollDepthSent < milestone) {
@@ -444,28 +579,13 @@
     }
   }
 
-  function trackFormInteraction(event) {
+  function trackFormFocus(event) {
     const input = event.target;
     if (!['INPUT', 'TEXTAREA', 'SELECT'].includes(input.tagName)) return;
     
-    const form = input.closest('form');
+    trackFormFieldInteraction(input);
 
-    // Track field abandonment
-    trackFormFieldAbandonment(input);
-
-    const data = {
-      formId: form?.id || null,
-      formName: form?.name || null,
-      formAction: form?.action || null,
-      fieldType: input.type || input.tagName.toLowerCase(),
-      fieldName: input.name || null,
-      fieldId: input.id || null,
-      fieldPlaceholder: input.placeholder || null,
-      fieldLabel: getFieldLabel(input),
-      fieldOrder: formFieldsInteracted.length
-    };
-
-    // Don't track sensitive fields
+    // Don't track sensitive field values
     const sensitiveTypes = ['password', 'credit-card', 'cc-number', 'cc-exp', 'cc-csc'];
     const sensitiveNames = ['password', 'pwd', 'pass', 'credit', 'card', 'cvv', 'cvc', 'ssn', 'social'];
     
@@ -473,24 +593,19 @@
       sensitiveNames.some(s => (input.name || '').toLowerCase().includes(s));
     
     if (!isSensitive && input.type !== 'password') {
-      sendEvent('form_interact', data);
+      const form = input.closest('form');
+      sendEvent('form_interact', {
+        ...getFormInfo(form),
+        fieldType: input.type || input.tagName.toLowerCase(),
+        fieldName: input.name || null,
+        fieldId: input.id || null,
+        fieldLabel: getFieldLabel(input)
+      });
     }
   }
 
-  function trackFormSubmit(event) {
-    const form = event.target;
-    sendEvent('form_submit', {
-      formId: form.id || null,
-      formName: form.name || null,
-      formAction: form.action || null,
-      fieldCount: form.elements.length,
-      fieldsInteracted: formFieldsInteracted.length,
-      timeToComplete: Date.now() - pageEntryTime
-    });
-    
-    // Reset form tracking
-    formFieldsInteracted = [];
-    lastFormField = null;
+  function trackFormSubmitEvent(event) {
+    trackFormSubmit(event.target);
   }
 
   function trackVisibilityChange() {
@@ -509,7 +624,6 @@
   }
 
   function trackMouseLeave(event) {
-    // Track when user moves mouse to top of page (potential exit intent)
     if (event.clientY <= 5) {
       sendEvent('exit_intent', {
         timeOnPage: Date.now() - pageEntryTime,
@@ -527,8 +641,12 @@
       totalVisibleTime += now - lastVisibilityChange;
     }
 
-    // Check for form abandonment
-    trackFormAbandonment();
+    // Check all active forms for abandonment
+    activeForms.forEach(function(data, form) {
+      if (!data.submitted) {
+        checkFormAbandonment(form, 'page_exit');
+      }
+    });
 
     sendEvent('pageexit', {
       timeOnPage: now - pageEntryTime,
@@ -537,8 +655,7 @@
       clickCount: clickCount,
       interactionCount: interactionCount,
       rageClickCount: rageClickCount,
-      deadClickCount: deadClickCount,
-      formFieldsInteracted: formFieldsInteracted.length
+      deadClickCount: deadClickCount
     });
   }
 
@@ -552,16 +669,12 @@
   }
 
   function init() {
-    // Track initial page view
     trackPageView();
+    setupFormObserver();
 
-    // Track all clicks
     document.addEventListener('click', trackClick, { passive: true, capture: true });
-
-    // Track mouse movement for thrashing detection
     document.addEventListener('mousemove', trackMouseMove, { passive: true });
 
-    // Track scrolling with debounce
     let scrollTimeout;
     window.addEventListener('scroll', function() {
       trackScroll();
@@ -574,26 +687,15 @@
       }, 500);
     }, { passive: true });
 
-    // Track form interactions
-    document.addEventListener('focus', trackFormInteraction, { passive: true, capture: true });
-    document.addEventListener('blur', function(event) {
-      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(event.target.tagName)) {
-        trackFormFieldAbandonment(null); // Field lost focus
-      }
-    }, { passive: true, capture: true });
-    document.addEventListener('submit', trackFormSubmit, { passive: true, capture: true });
-
-    // Track visibility changes (tab switching)
+    document.addEventListener('focusin', trackFormFocus, { passive: true, capture: true });
+    document.addEventListener('submit', trackFormSubmitEvent, { passive: true, capture: true });
     document.addEventListener('visibilitychange', trackVisibilityChange);
-
-    // Track exit intent
     document.addEventListener('mouseleave', trackMouseLeave);
 
-    // Track page exit
     window.addEventListener('beforeunload', trackPageExit);
     window.addEventListener('pagehide', trackPageExit);
 
-    // Track SPA navigation
+    // SPA navigation
     const originalPushState = history.pushState;
     history.pushState = function(state, title, url) {
       if (url) trackNavigation(url, 'pushState');
@@ -616,12 +718,26 @@
       trackPageView();
     });
 
-    // Track hash changes
     window.addEventListener('hashchange', function(e) {
       sendEvent('hashchange', {
         oldHash: new URL(e.oldURL).hash,
         newHash: new URL(e.newURL).hash
       });
+    });
+
+    // Listen for Escape key (common way to close modals)
+    document.addEventListener('keydown', function(event) {
+      if (event.key === 'Escape') {
+        // Check if any modal with form might be closing
+        setTimeout(function() {
+          activeForms.forEach(function(data, form) {
+            // If form is no longer visible, it was probably in a modal that closed
+            if (!form.offsetParent && !data.submitted) {
+              checkFormAbandonment(form, 'escape_pressed');
+            }
+          });
+        }, 100);
+      }
     });
   }
 
@@ -635,10 +751,16 @@
     isVisible = true;
     recentClicks = [];
     mouseMovements = [];
-    formFieldsInteracted = [];
-    lastFormField = null;
     deadClickCount = 0;
     rageClickCount = 0;
+    
+    // Check for form abandonments before reset
+    activeForms.forEach(function(data, form) {
+      if (!data.submitted) {
+        checkFormAbandonment(form, 'page_navigation');
+      }
+    });
+    activeForms.clear();
   }
 
   if (document.readyState === 'loading') {
@@ -665,8 +787,14 @@
       return {
         rageClicks: rageClickCount,
         deadClicks: deadClickCount,
-        formFieldsSkipped: formFieldsInteracted.length
+        activeForms: activeForms.size
       };
+    },
+    // Manual form abandonment trigger (for custom implementations)
+    reportFormAbandonment: function(formElement, reason) {
+      if (formElement) {
+        checkFormAbandonment(formElement, reason || 'manual');
+      }
     }
   };
 })();
