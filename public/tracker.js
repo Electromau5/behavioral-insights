@@ -1,5 +1,5 @@
 /**
- * Behavioral Insights Tracker - Enhanced with Full User Flow Tracking
+ * Behavioral Insights Tracker - Enhanced with Frustration Signal Detection
  */
 (function() {
   'use strict';
@@ -22,6 +22,15 @@
   let lastVisibilityChange = Date.now();
   let lastScrollDepthSent = 0;
   let interactionCount = 0;
+
+  // Frustration detection state
+  let recentClicks = []; // { time, x, y, element }
+  let mouseMovements = []; // { time, x, y }
+  let lastMousePosition = { x: 0, y: 0 };
+  let formFieldsInteracted = []; // Track form field order
+  let lastFormField = null;
+  let deadClickCount = 0;
+  let rageClickCount = 0;
 
   function generateId() {
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
@@ -95,6 +104,18 @@
     return path.join(' > ');
   }
 
+  function isClickableElement(element) {
+    if (!element) return false;
+    const tagName = element.tagName.toLowerCase();
+    const clickableTags = ['a', 'button', 'input', 'select', 'textarea', 'label'];
+    if (clickableTags.includes(tagName)) return true;
+    if (element.getAttribute('role') === 'button') return true;
+    if (element.onclick || element.getAttribute('onclick')) return true;
+    if (element.style.cursor === 'pointer') return true;
+    if (window.getComputedStyle(element).cursor === 'pointer') return true;
+    return false;
+  }
+
   function collectBaseData() {
     return {
       siteId: SITE_ID,
@@ -136,6 +157,205 @@
     }
   }
 
+  // ==========================================
+  // FRUSTRATION SIGNAL DETECTION
+  // ==========================================
+
+  function detectRageClick(event) {
+    const now = Date.now();
+    const threshold = 500; // 500ms window
+    const distanceThreshold = 50; // pixels
+    const clickThreshold = 3; // 3+ clicks = rage click
+
+    recentClicks.push({
+      time: now,
+      x: event.clientX,
+      y: event.clientY,
+      element: getElementSelector(event.target)
+    });
+
+    // Remove clicks older than threshold
+    recentClicks = recentClicks.filter(c => now - c.time < threshold);
+
+    // Check if we have enough rapid clicks in same area
+    if (recentClicks.length >= clickThreshold) {
+      const firstClick = recentClicks[0];
+      const allInSameArea = recentClicks.every(c => 
+        Math.abs(c.x - firstClick.x) < distanceThreshold &&
+        Math.abs(c.y - firstClick.y) < distanceThreshold
+      );
+
+      if (allInSameArea) {
+        rageClickCount++;
+        sendEvent('rage_click', {
+          clickCount: recentClicks.length,
+          timeWindow: now - firstClick.time,
+          x: event.clientX,
+          y: event.clientY,
+          element: getElementSelector(event.target),
+          elementPath: getElementPath(event.target),
+          elementText: (event.target.innerText || '').slice(0, 100).trim(),
+          totalRageClicks: rageClickCount
+        });
+        recentClicks = []; // Reset after detecting
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function detectDeadClick(event) {
+    const target = event.target;
+    
+    // Check if element looks clickable but isn't actually interactive
+    const looksClickable = (
+      target.style.cursor === 'pointer' ||
+      window.getComputedStyle(target).cursor === 'pointer' ||
+      target.tagName.toLowerCase() === 'img' ||
+      target.classList.contains('btn') ||
+      target.classList.contains('button') ||
+      target.classList.contains('link') ||
+      target.classList.contains('clickable')
+    );
+
+    const isActuallyClickable = isClickableElement(target) || 
+      target.closest('a, button, input, select, textarea, [role="button"]');
+
+    if (looksClickable && !isActuallyClickable) {
+      deadClickCount++;
+      sendEvent('dead_click', {
+        element: getElementSelector(target),
+        elementPath: getElementPath(target),
+        elementText: (target.innerText || '').slice(0, 100).trim(),
+        x: event.clientX,
+        y: event.clientY,
+        totalDeadClicks: deadClickCount,
+        reason: 'looks_clickable_but_not_interactive'
+      });
+      return true;
+    }
+    return false;
+  }
+
+  function detectMouseThrashing() {
+    const now = Date.now();
+    const windowMs = 1000; // 1 second window
+    const threshold = 500; // Total distance threshold for "chaotic"
+    const directionChanges = 4; // Minimum direction changes
+
+    // Keep only recent movements
+    mouseMovements = mouseMovements.filter(m => now - m.time < windowMs);
+
+    if (mouseMovements.length < 10) return false;
+
+    // Calculate total distance and direction changes
+    let totalDistance = 0;
+    let changes = 0;
+    let lastDirection = null;
+
+    for (let i = 1; i < mouseMovements.length; i++) {
+      const prev = mouseMovements[i - 1];
+      const curr = mouseMovements[i];
+      
+      const dx = curr.x - prev.x;
+      const dy = curr.y - prev.y;
+      totalDistance += Math.sqrt(dx * dx + dy * dy);
+
+      // Determine direction (simplified to 4 quadrants)
+      const direction = (dx > 0 ? 'R' : 'L') + (dy > 0 ? 'D' : 'U');
+      if (lastDirection && direction !== lastDirection) {
+        changes++;
+      }
+      lastDirection = direction;
+    }
+
+    if (totalDistance > threshold && changes >= directionChanges) {
+      sendEvent('mouse_thrash', {
+        totalDistance: Math.round(totalDistance),
+        directionChanges: changes,
+        duration: now - mouseMovements[0].time,
+        movementCount: mouseMovements.length
+      });
+      mouseMovements = []; // Reset after detecting
+      return true;
+    }
+    return false;
+  }
+
+  function trackFormFieldAbandonment(currentField) {
+    if (lastFormField && lastFormField !== currentField) {
+      const fieldInfo = {
+        fieldName: lastFormField.name || lastFormField.id || 'unknown',
+        fieldType: lastFormField.type || lastFormField.tagName.toLowerCase(),
+        fieldLabel: getFieldLabel(lastFormField),
+        wasEmpty: !lastFormField.value || lastFormField.value.trim() === '',
+        nextField: currentField ? (currentField.name || currentField.id || 'unknown') : 'none'
+      };
+
+      // Track field order for form abandonment analysis
+      const fieldId = fieldInfo.fieldName || fieldInfo.fieldType;
+      if (!formFieldsInteracted.includes(fieldId)) {
+        formFieldsInteracted.push(fieldId);
+      }
+
+      // If field was left empty, it might be a friction point
+      if (fieldInfo.wasEmpty) {
+        sendEvent('form_field_skip', {
+          ...fieldInfo,
+          fieldOrder: formFieldsInteracted.length,
+          formId: lastFormField.closest('form')?.id || null,
+          formName: lastFormField.closest('form')?.name || null
+        });
+      }
+    }
+    lastFormField = currentField;
+  }
+
+  function getFieldLabel(field) {
+    // Try to find associated label
+    if (field.id) {
+      const label = document.querySelector(`label[for="${field.id}"]`);
+      if (label) return label.innerText.trim().slice(0, 50);
+    }
+    // Check for parent label
+    const parentLabel = field.closest('label');
+    if (parentLabel) return parentLabel.innerText.trim().slice(0, 50);
+    // Use placeholder or name
+    return field.placeholder || field.name || null;
+  }
+
+  function trackFormAbandonment() {
+    // Called on page exit - check if user was in a form
+    const activeForm = document.activeElement?.closest('form');
+    if (activeForm || formFieldsInteracted.length > 0) {
+      const form = activeForm || document.querySelector('form');
+      if (form) {
+        const totalFields = form.querySelectorAll('input, select, textarea').length;
+        const filledFields = Array.from(form.querySelectorAll('input, select, textarea'))
+          .filter(f => f.value && f.value.trim() !== '').length;
+
+        if (filledFields > 0 && filledFields < totalFields) {
+          // Form was partially filled but not submitted
+          sendEvent('form_abandonment', {
+            formId: form.id || null,
+            formName: form.name || null,
+            formAction: form.action || null,
+            totalFields: totalFields,
+            filledFields: filledFields,
+            fieldsInteracted: formFieldsInteracted,
+            lastFieldInteracted: lastFormField ? (lastFormField.name || lastFormField.id) : null,
+            completionRate: Math.round((filledFields / totalFields) * 100),
+            timeInForm: Date.now() - pageEntryTime
+          });
+        }
+      }
+    }
+  }
+
+  // ==========================================
+  // STANDARD TRACKING
+  // ==========================================
+
   function trackPageView() {
     sendEvent('pageview', { 
       title: document.title,
@@ -147,6 +367,11 @@
   function trackClick(event) {
     clickCount++;
     const target = event.target;
+    
+    // Check for frustration signals first
+    const isRageClick = detectRageClick(event);
+    const isDeadClick = !isRageClick && detectDeadClick(event);
+    
     const clickableParent = target.closest('a, button, [role="button"], input[type="submit"], input[type="button"]');
     
     const data = {
@@ -157,7 +382,9 @@
       x: event.clientX,
       y: event.clientY,
       pageX: event.pageX,
-      pageY: event.pageY
+      pageY: event.pageY,
+      isRageClick: isRageClick,
+      isDeadClick: isDeadClick
     };
 
     if (clickableParent) {
@@ -172,6 +399,29 @@
     }
 
     sendEvent('click', data);
+  }
+
+  function trackMouseMove(event) {
+    const now = Date.now();
+    
+    // Throttle: only track every 50ms
+    if (mouseMovements.length > 0 && now - mouseMovements[mouseMovements.length - 1].time < 50) {
+      return;
+    }
+
+    mouseMovements.push({
+      time: now,
+      x: event.clientX,
+      y: event.clientY
+    });
+
+    // Keep only last 2 seconds of movements
+    mouseMovements = mouseMovements.filter(m => now - m.time < 2000);
+
+    // Check for mouse thrashing
+    detectMouseThrashing();
+
+    lastMousePosition = { x: event.clientX, y: event.clientY };
   }
 
   function trackScroll() {
@@ -195,10 +445,13 @@
   }
 
   function trackFormInteraction(event) {
-    const form = event.target.closest('form');
     const input = event.target;
+    if (!['INPUT', 'TEXTAREA', 'SELECT'].includes(input.tagName)) return;
     
-    if (!form && !['INPUT', 'TEXTAREA', 'SELECT'].includes(input.tagName)) return;
+    const form = input.closest('form');
+
+    // Track field abandonment
+    trackFormFieldAbandonment(input);
 
     const data = {
       formId: form?.id || null,
@@ -207,7 +460,9 @@
       fieldType: input.type || input.tagName.toLowerCase(),
       fieldName: input.name || null,
       fieldId: input.id || null,
-      fieldPlaceholder: input.placeholder || null
+      fieldPlaceholder: input.placeholder || null,
+      fieldLabel: getFieldLabel(input),
+      fieldOrder: formFieldsInteracted.length
     };
 
     // Don't track sensitive fields
@@ -218,7 +473,6 @@
       sensitiveNames.some(s => (input.name || '').toLowerCase().includes(s));
     
     if (!isSensitive && input.type !== 'password') {
-      // Only track that field was interacted with, not the value
       sendEvent('form_interact', data);
     }
   }
@@ -229,8 +483,14 @@
       formId: form.id || null,
       formName: form.name || null,
       formAction: form.action || null,
-      fieldCount: form.elements.length
+      fieldCount: form.elements.length,
+      fieldsInteracted: formFieldsInteracted.length,
+      timeToComplete: Date.now() - pageEntryTime
     });
+    
+    // Reset form tracking
+    formFieldsInteracted = [];
+    lastFormField = null;
   }
 
   function trackVisibilityChange() {
@@ -254,7 +514,9 @@
       sendEvent('exit_intent', {
         timeOnPage: Date.now() - pageEntryTime,
         scrollDepth: maxScrollDepth,
-        clickCount: clickCount
+        clickCount: clickCount,
+        rageClickCount: rageClickCount,
+        deadClickCount: deadClickCount
       });
     }
   }
@@ -265,12 +527,18 @@
       totalVisibleTime += now - lastVisibilityChange;
     }
 
+    // Check for form abandonment
+    trackFormAbandonment();
+
     sendEvent('pageexit', {
       timeOnPage: now - pageEntryTime,
       activeTime: totalVisibleTime,
       maxScrollDepth: maxScrollDepth,
       clickCount: clickCount,
-      interactionCount: interactionCount
+      interactionCount: interactionCount,
+      rageClickCount: rageClickCount,
+      deadClickCount: deadClickCount,
+      formFieldsInteracted: formFieldsInteracted.length
     });
   }
 
@@ -290,6 +558,9 @@
     // Track all clicks
     document.addEventListener('click', trackClick, { passive: true, capture: true });
 
+    // Track mouse movement for thrashing detection
+    document.addEventListener('mousemove', trackMouseMove, { passive: true });
+
     // Track scrolling with debounce
     let scrollTimeout;
     window.addEventListener('scroll', function() {
@@ -305,6 +576,11 @@
 
     // Track form interactions
     document.addEventListener('focus', trackFormInteraction, { passive: true, capture: true });
+    document.addEventListener('blur', function(event) {
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(event.target.tagName)) {
+        trackFormFieldAbandonment(null); // Field lost focus
+      }
+    }, { passive: true, capture: true });
     document.addEventListener('submit', trackFormSubmit, { passive: true, capture: true });
 
     // Track visibility changes (tab switching)
@@ -357,6 +633,12 @@
     totalVisibleTime = 0;
     lastVisibilityChange = Date.now();
     isVisible = true;
+    recentClicks = [];
+    mouseMovements = [];
+    formFieldsInteracted = [];
+    lastFormField = null;
+    deadClickCount = 0;
+    rageClickCount = 0;
   }
 
   if (document.readyState === 'loading') {
@@ -378,6 +660,13 @@
     },
     getVisitorId: function() {
       return getVisitorId();
+    },
+    getFrustrationStats: function() {
+      return {
+        rageClicks: rageClickCount,
+        deadClicks: deadClickCount,
+        formFieldsSkipped: formFieldsInteracted.length
+      };
     }
   };
 })();
