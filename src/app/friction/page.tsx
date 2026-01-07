@@ -62,13 +62,19 @@ interface KeyFinding {
   finding: string;
   severity: 'critical' | 'high' | 'medium' | 'low';
   evidence: string;
+  psychologicalCause?: string;
+  userMindset?: string;
   impact: string;
+  uxPrinciple?: string;
 }
 
 interface TopProblem {
   problem: string;
   location: string;
   frequency: string;
+  rootCause?: string;
+  userThinking?: string;
+  whyItHappens?: string;
   recommendation: string;
 }
 
@@ -76,7 +82,17 @@ interface FormIssue {
   form: string;
   issue: string;
   problemField: string;
+  psychologicalBarrier?: string;
   recommendation: string;
+}
+
+interface UXPattern {
+  pattern: string;
+  principle?: string;
+  evidence: string;
+  userExperience?: string;
+  userMindset?: string;
+  solution: string;
 }
 
 interface PrioritizedAction {
@@ -84,17 +100,34 @@ interface PrioritizedAction {
   action: string;
   effort: 'low' | 'medium' | 'high';
   impact: 'low' | 'medium' | 'high';
-  rationale: string;
+  psychologicalRationale?: string;
+  rationale?: string;
+  expectedOutcome?: string;
+}
+
+interface PeakEndAnalysis {
+  currentPeakMoments: string;
+  endingExperience: string;
+  recommendations: string;
+}
+
+interface UserExperience {
+  emotionalState: string;
+  mentalModelViolations: string[];
+  cognitiveLoadAssessment: string;
 }
 
 interface AIReport {
   summary: string;
   frictionLevel: 'low' | 'medium' | 'high' | 'critical';
+  userExperience?: UserExperience;
   keyFindings: KeyFinding[];
   topProblems: TopProblem[];
   formIssues: FormIssue[];
+  uxPatterns?: UXPattern[];
   prioritizedActions: PrioritizedAction[];
-  trendsAndPatterns: string[];
+  peakEndAnalysis?: PeakEndAnalysis;
+  trendsAndPatterns?: string[];
   source?: string;
   error?: string;
 }
@@ -171,11 +204,21 @@ export default function FrictionPage() {
 
   const getFrictionLevelColor = (level: string) => {
     switch (level) {
-      case 'critical': return 'text-red-600 bg-red-50';
-      case 'high': return 'text-orange-600 bg-orange-50';
-      case 'medium': return 'text-amber-600 bg-amber-50';
-      case 'low': return 'text-emerald-600 bg-emerald-50';
-      default: return 'text-slate-600 bg-slate-50';
+      case 'critical': return 'text-red-600 bg-red-50 border-red-200';
+      case 'high': return 'text-orange-600 bg-orange-50 border-orange-200';
+      case 'medium': return 'text-amber-600 bg-amber-50 border-amber-200';
+      case 'low': return 'text-emerald-600 bg-emerald-50 border-emerald-200';
+      default: return 'text-slate-600 bg-slate-50 border-slate-200';
+    }
+  };
+
+  const getCognitiveLoadColor = (level: string) => {
+    switch (level?.toLowerCase()) {
+      case 'overwhelming': return 'text-red-600 bg-red-100';
+      case 'high': return 'text-orange-600 bg-orange-100';
+      case 'moderate': return 'text-amber-600 bg-amber-100';
+      case 'low': return 'text-emerald-600 bg-emerald-100';
+      default: return 'text-slate-600 bg-slate-100';
     }
   };
 
@@ -209,7 +252,7 @@ export default function FrictionPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center gap-4">
-              <Link href="/" className="flex items-center gap-2">
+              <Link href="/dashboard" className="flex items-center gap-2">
                 <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
                   <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
@@ -242,7 +285,7 @@ export default function FrictionPage() {
         <div className="flex justify-between items-center mb-6">
           <div>
             <h1 className="text-2xl font-bold text-slate-900">Friction Report</h1>
-            <p className="text-slate-600 mt-1">Identify where users struggle on your site</p>
+            <p className="text-slate-600 mt-1">Understand why users struggle with psychological insights</p>
           </div>
           <div className="flex gap-2">
             {['7d', '30d', '90d'].map((p) => (
@@ -300,8 +343,8 @@ export default function FrictionPage() {
               <div className="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-xl p-6 mb-8 text-white">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h2 className="text-xl font-semibold">Generate AI Friction Report</h2>
-                    <p className="text-indigo-100 mt-1">Get actionable insights and prioritized recommendations</p>
+                    <h2 className="text-xl font-semibold">Generate AI Psychological Analysis</h2>
+                    <p className="text-indigo-100 mt-1">Understand WHY users struggle using UX research frameworks</p>
                   </div>
                   <button
                     onClick={() => fetchFrictionData(true)}
@@ -314,10 +357,10 @@ export default function FrictionPage() {
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                         </svg>
-                        Analyzing...
+                        Analyzing Psychology...
                       </span>
                     ) : (
-                      '🧠 Generate Report'
+                      '🧠 Analyze User Psychology'
                     )}
                   </button>
                 </div>
@@ -332,7 +375,7 @@ export default function FrictionPage() {
                     { id: 'overview', label: '📊 Overview' },
                     { id: 'pages', label: '📄 Pages' },
                     { id: 'forms', label: '📝 Forms' },
-                    { id: 'report', label: '📋 AI Report', disabled: !frictionData.aiReport }
+                    { id: 'report', label: '🧠 Psychology Report', disabled: !frictionData.aiReport }
                   ].map((tab) => (
                     <button
                       key={tab.id}
@@ -376,6 +419,7 @@ export default function FrictionPage() {
                               <div className="flex gap-4 text-sm text-slate-600">
                                 {page.rageClicks > 0 && <span>🔴 {page.rageClicks} rage clicks</span>}
                                 {page.deadClicks > 0 && <span>🟠 {page.deadClicks} dead clicks</span>}
+                                {page.mouseThrashes > 0 && <span>🟡 {page.mouseThrashes} thrashing</span>}
                                 {page.formAbandonments > 0 && <span>🟣 {page.formAbandonments} form abandons</span>}
                               </div>
                               {page.topIssues.length > 0 && (
@@ -479,9 +523,9 @@ export default function FrictionPage() {
 
                 {activeTab === 'report' && frictionData.aiReport && (
                   <div className="space-y-8">
-                    {/* Summary */}
-                    <div className={`rounded-xl p-6 ${getFrictionLevelColor(frictionData.aiReport.frictionLevel)}`}>
-                      <div className="flex items-center gap-3 mb-3">
+                    {/* Summary & User Experience */}
+                    <div className={`rounded-xl p-6 border ${getFrictionLevelColor(frictionData.aiReport.frictionLevel)}`}>
+                      <div className="flex items-center gap-3 mb-4">
                         <span className="text-3xl">
                           {frictionData.aiReport.frictionLevel === 'critical' ? '🚨' :
                            frictionData.aiReport.frictionLevel === 'high' ? '⚠️' :
@@ -491,8 +535,71 @@ export default function FrictionPage() {
                           <span className="text-lg font-semibold capitalize">{frictionData.aiReport.frictionLevel} Friction Level</span>
                         </div>
                       </div>
-                      <p className="text-slate-700">{frictionData.aiReport.summary}</p>
+                      <p className="text-slate-700 mb-4">{frictionData.aiReport.summary}</p>
+                      
+                      {frictionData.aiReport.userExperience && (
+                        <div className="mt-4 pt-4 border-t border-current/20">
+                          <h4 className="font-medium text-slate-800 mb-3">User Psychology Assessment</h4>
+                          <div className="grid md:grid-cols-3 gap-4">
+                            <div className="bg-white/50 rounded-lg p-3">
+                              <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Emotional State</p>
+                              <p className="text-sm font-medium text-slate-800">{frictionData.aiReport.userExperience.emotionalState}</p>
+                            </div>
+                            <div className="bg-white/50 rounded-lg p-3">
+                              <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Cognitive Load</p>
+                              <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${getCognitiveLoadColor(frictionData.aiReport.userExperience.cognitiveLoadAssessment)}`}>
+                                {frictionData.aiReport.userExperience.cognitiveLoadAssessment}
+                              </span>
+                            </div>
+                            <div className="bg-white/50 rounded-lg p-3">
+                              <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Mental Model Violations</p>
+                              <p className="text-sm text-slate-700">{frictionData.aiReport.userExperience.mentalModelViolations?.length || 0} found</p>
+                            </div>
+                          </div>
+                          {frictionData.aiReport.userExperience.mentalModelViolations?.length > 0 && (
+                            <div className="mt-3">
+                              <p className="text-xs text-slate-500 mb-2">Expectation Violations:</p>
+                              <ul className="text-sm text-slate-700 space-y-1">
+                                {frictionData.aiReport.userExperience.mentalModelViolations.map((v, i) => (
+                                  <li key={i} className="flex items-start gap-2">
+                                    <span className="text-red-500 mt-0.5">•</span>
+                                    <span>{v}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
+
+                    {/* UX Patterns */}
+                    {frictionData.aiReport.uxPatterns && frictionData.aiReport.uxPatterns.length > 0 && (
+                      <div>
+                        <h3 className="font-semibold text-slate-900 mb-4">🎯 UX Patterns Detected</h3>
+                        <div className="grid md:grid-cols-2 gap-4">
+                          {frictionData.aiReport.uxPatterns.map((pattern, i) => (
+                            <div key={i} className="bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-200 rounded-lg p-4">
+                              <div className="flex items-start justify-between mb-2">
+                                <span className="font-semibold text-indigo-900">{pattern.pattern}</span>
+                                {pattern.principle && (
+                                  <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded">
+                                    {pattern.principle}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-sm text-slate-600 mb-2"><strong>Evidence:</strong> {pattern.evidence}</p>
+                              {(pattern.userExperience || pattern.userMindset) && (
+                                <p className="text-sm text-slate-600 mb-2">
+                                  <strong>User feels:</strong> {pattern.userExperience || pattern.userMindset}
+                                </p>
+                              )}
+                              <p className="text-sm text-emerald-700"><strong>Solution:</strong> {pattern.solution}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     {/* Key Findings */}
                     {frictionData.aiReport.keyFindings && frictionData.aiReport.keyFindings.length > 0 && (
@@ -505,12 +612,42 @@ export default function FrictionPage() {
                                 <span className={`px-2 py-0.5 rounded text-xs font-medium uppercase ${getSeverityColor(finding.severity)}`}>
                                   {finding.severity}
                                 </span>
+                                {(finding.psychologicalCause || finding.uxPrinciple) && (
+                                  <span className="text-xs bg-slate-200 text-slate-700 px-2 py-0.5 rounded">
+                                    {finding.psychologicalCause || finding.uxPrinciple}
+                                  </span>
+                                )}
                               </div>
                               <p className="font-medium text-slate-900">{finding.finding}</p>
                               <p className="text-sm text-slate-600 mt-1"><strong>Evidence:</strong> {finding.evidence}</p>
+                              {finding.userMindset && (
+                                <p className="text-sm text-slate-600"><strong>User thinking:</strong> &quot;{finding.userMindset}&quot;</p>
+                              )}
                               <p className="text-sm text-slate-600"><strong>Impact:</strong> {finding.impact}</p>
                             </div>
                           ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Peak-End Analysis */}
+                    {frictionData.aiReport.peakEndAnalysis && (
+                      <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-6">
+                        <h3 className="font-semibold text-amber-900 mb-4">📈 Peak-End Rule Analysis</h3>
+                        <p className="text-xs text-amber-700 mb-4">Users judge experiences by their peak (best/worst) moment and ending</p>
+                        <div className="grid md:grid-cols-3 gap-4">
+                          <div className="bg-white/70 rounded-lg p-3">
+                            <p className="text-xs text-amber-600 uppercase tracking-wide mb-1">Peak Friction Moments</p>
+                            <p className="text-sm text-slate-800">{frictionData.aiReport.peakEndAnalysis.currentPeakMoments}</p>
+                          </div>
+                          <div className="bg-white/70 rounded-lg p-3">
+                            <p className="text-xs text-amber-600 uppercase tracking-wide mb-1">Session Endings</p>
+                            <p className="text-sm text-slate-800">{frictionData.aiReport.peakEndAnalysis.endingExperience}</p>
+                          </div>
+                          <div className="bg-white/70 rounded-lg p-3">
+                            <p className="text-xs text-amber-600 uppercase tracking-wide mb-1">Recommendations</p>
+                            <p className="text-sm text-slate-800">{frictionData.aiReport.peakEndAnalysis.recommendations}</p>
+                          </div>
                         </div>
                       </div>
                     )}
@@ -534,7 +671,14 @@ export default function FrictionPage() {
                                   {action.impact} impact
                                 </span>
                               </div>
-                              <p className="text-sm text-slate-600 ml-11">{action.rationale}</p>
+                              <p className="text-sm text-slate-600 ml-11">
+                                {action.psychologicalRationale || action.rationale}
+                              </p>
+                              {action.expectedOutcome && (
+                                <p className="text-sm text-emerald-600 ml-11 mt-1">
+                                  <strong>Expected:</strong> {action.expectedOutcome}
+                                </p>
+                              )}
                             </div>
                           ))}
                         </div>
@@ -551,6 +695,16 @@ export default function FrictionPage() {
                               <p className="font-medium text-slate-900 mb-2">{problem.problem}</p>
                               <p className="text-sm text-slate-500">📍 {problem.location}</p>
                               <p className="text-sm text-slate-500">📈 {problem.frequency}</p>
+                              {(problem.rootCause || problem.whyItHappens) && (
+                                <p className="text-sm text-indigo-600 mt-2">
+                                  <strong>Why:</strong> {problem.rootCause || problem.whyItHappens}
+                                </p>
+                              )}
+                              {problem.userThinking && (
+                                <p className="text-sm text-slate-600 mt-1 italic">
+                                  User thinks: &quot;{problem.userThinking}&quot;
+                                </p>
+                              )}
                               <p className="text-sm text-emerald-600 mt-2">💡 {problem.recommendation}</p>
                             </div>
                           ))}
@@ -566,8 +720,13 @@ export default function FrictionPage() {
                           {frictionData.aiReport.formIssues.map((issue, i) => (
                             <div key={i} className="bg-purple-50 border border-purple-200 rounded-lg p-4">
                               <p className="font-medium text-purple-900">{issue.form}: {issue.issue}</p>
-                              <p className="text-sm text-purple-700 mt-1">Problem field: {issue.problemField}</p>
-                              <p className="text-sm text-purple-600 mt-1">💡 {issue.recommendation}</p>
+                              <p className="text-sm text-purple-700 mt-1">Problem field: <strong>{issue.problemField}</strong></p>
+                              {issue.psychologicalBarrier && (
+                                <p className="text-sm text-purple-600 mt-1">
+                                  <strong>Psychological barrier:</strong> {issue.psychologicalBarrier}
+                                </p>
+                              )}
+                              <p className="text-sm text-emerald-600 mt-2">💡 {issue.recommendation}</p>
                             </div>
                           ))}
                         </div>
@@ -577,7 +736,7 @@ export default function FrictionPage() {
                     {/* Trends */}
                     {frictionData.aiReport.trendsAndPatterns && frictionData.aiReport.trendsAndPatterns.length > 0 && (
                       <div>
-                        <h3 className="font-semibold text-slate-900 mb-4">📈 Trends & Patterns</h3>
+                        <h3 className="font-semibold text-slate-900 mb-4">📈 Behavioral Trends</h3>
                         <ul className="space-y-2">
                           {frictionData.aiReport.trendsAndPatterns.map((trend, i) => (
                             <li key={i} className="flex items-start gap-2 text-slate-700">

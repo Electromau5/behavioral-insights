@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { events, sessions } from '@/lib/schema';
+import { events } from '@/lib/schema';
 import { eq, and, gte, lte, sql, desc } from 'drizzle-orm';
 import { auth } from '@/lib/auth';
 import Anthropic from '@anthropic-ai/sdk';
@@ -82,7 +82,7 @@ export async function GET(request: NextRequest) {
         eq(events.siteId, siteId),
         gte(events.timestamp, start),
         lte(events.timestamp, now),
-        sql`${events.eventType} IN ('rage_click', 'dead_click', 'mouse_thrash', 'form_abandonment', 'form_field_skip', 'exit_intent')`
+        sql`${events.eventType} IN ('rage_click', 'dead_click', 'mouse_thrash', 'form_abandonment', 'form_field_skip', 'form_start', 'exit_intent')`
       ))
       .orderBy(desc(events.timestamp));
 
@@ -220,16 +220,14 @@ function aggregateFrictionByPage(events: FrictionEvent[], totalSessions: number)
     const totalFriction = data.rageClicks + data.deadClicks + data.mouseThrashes + 
                           data.formAbandonments + data.fieldSkips;
     
-    // Calculate friction score (weighted)
     const frictionScore = (
-      data.rageClicks * 3 +      // Rage clicks are severe
-      data.deadClicks * 2 +      // Dead clicks are moderate
-      data.mouseThrashes * 2 +   // Mouse thrashing is moderate
-      data.formAbandonments * 4 + // Form abandonment is very severe
-      data.fieldSkips * 1         // Field skips are minor
+      data.rageClicks * 3 +
+      data.deadClicks * 2 +
+      data.mouseThrashes * 2 +
+      data.formAbandonments * 4 +
+      data.fieldSkips * 1
     ) / Math.max(data.sessions.size, 1);
 
-    // Get top issues
     const topIssues = Array.from(data.issues.entries())
       .map(([key, value]) => ({
         type: key.split(':')[0],
@@ -331,7 +329,7 @@ function analyzeFormFriction(events: FrictionEvent[]): FormFriction[] {
       path: data.path,
       abandonments: data.abandonments,
       completions: data.completions,
-      abandonmentRate: data.abandonments > 0 ? 100 : 0, // Would need form_submit events to calculate properly
+      abandonmentRate: data.abandonments > 0 ? 100 : 0,
       problemFields
     });
   }
@@ -351,76 +349,132 @@ async function generateFrictionReport(data: {
     return { error: 'AI analysis unavailable', source: 'fallback' };
   }
 
-  const prompt = `You are a UX analyst generating a friction report for a website. Analyze the following data and provide actionable insights.
+  const prompt = `You are an expert UX researcher and behavioral psychologist analyzing website friction data. Your goal is to explain WHY users are experiencing friction using established UX research frameworks, not just describe WHAT is happening.
+
+=== UX RESEARCH FRAMEWORK ===
+
+BEHAVIORAL PSYCHOLOGY PRINCIPLES:
+1. Paradox of Choice: Too many options lead to decision fatigue and reduced satisfaction. Users may freeze, abandon, or make poor choices.
+2. Zeigarnik Effect: Users remember uncompleted tasks better than completed ones. Interrupted flows create mental tension.
+3. Serial Position Effect: Users remember first and last items in lists better than middle items. Navigation/menu issues often occur in middle items.
+4. Peak-End Rule: Users judge experiences by their peak (best/worst) moment and the ending. Bad endings disproportionately hurt perception.
+5. Endowment Effect: Users overvalue things they've invested time in. Form abandonment after significant input is especially frustrating.
+
+DESIGN LAWS:
+1. Fitts's Law: Time to click a target depends on distance and size. Small/distant buttons cause errors and rage clicks.
+2. Hick's Law: Decision time increases with number and complexity of choices. Too many options cause hesitation and mouse thrashing.
+3. Miller's Law (7±2): Working memory holds 5-9 items. Information overload causes confusion and errors.
+
+KEY UX CONCEPTS:
+1. Mental Models: Users' internal understanding of how systems work. Friction often = violated mental model (expected X, got Y).
+2. Affordance: Visual cues suggesting how to use an element. Dead clicks = missing or misleading affordance.
+3. Cognitive Load: Mental effort required. Mouse thrashing and hesitation indicate high cognitive load.
+4. Progressive Disclosure: Revealing info gradually. Form abandonment may indicate too much revealed at once.
+5. Visual Hierarchy: Guiding attention by importance. Rage clicks on wrong elements = poor visual hierarchy.
+6. Information Architecture: How content is organized. Navigation confusion = poor IA.
+
+FRICTION SIGNAL INTERPRETATIONS:
+- Rage Clicks: Violated expectations. User expected action but nothing happened. Causes: slow response, broken element, misleading affordance, element too small (Fitts's Law).
+- Dead Clicks: Misleading affordance. Element looks clickable but isn't. User's mental model says "this should work."
+- Mouse Thrashing: High cognitive load. User is confused, searching, or frustrated. May indicate: unclear IA, Paradox of Choice, violated mental model.
+- Form Abandonment: Friction exceeded motivation. Endowment Effect lost. Causes: too many fields (Miller's Law), unclear value, privacy concerns, confusing labels.
+- Form Field Skip: Field creates friction. Causes: unclear label, feels unnecessary, too personal, cognitive load spike.
+- Exit Intent: User considering leaving. Peak-End Rule opportunity - this is the "end" of their experience.
+
+=== FRICTION DATA TO ANALYZE ===
 
 PERIOD: Last ${data.period === '7d' ? '7 days' : data.period === '30d' ? '30 days' : '90 days'}
 
-OVERALL FRICTION STATS:
+OVERALL STATS:
 - Total Sessions: ${data.overallStats.totalSessions}
 - Sessions with Friction: ${data.overallStats.sessionsWithFriction} (${data.overallStats.frictionRate}%)
 - Rage Clicks: ${data.overallStats.totalRageClicks}
 - Dead Clicks: ${data.overallStats.totalDeadClicks}
-- Mouse Thrashing Events: ${data.overallStats.totalMouseThrashes}
+- Mouse Thrashing: ${data.overallStats.totalMouseThrashes}
 - Form Abandonments: ${data.overallStats.totalFormAbandonments}
 - Form Field Skips: ${data.overallStats.totalFieldSkips}
 - Exit Intents: ${data.overallStats.totalExitIntents}
 
 TOP FRICTION PAGES:
 ${data.frictionByPage.map((p, i) => `${i + 1}. ${p.path}
-   - Friction Score: ${p.frictionScore}
-   - Rage Clicks: ${p.rageClicks}, Dead Clicks: ${p.deadClicks}
-   - Form Issues: ${p.formAbandonments} abandonments, ${p.fieldSkips} field skips
-   - Top Issues: ${p.topIssues.map(issue => `${issue.type} on "${issue.element}" (${issue.count}x)`).join(', ') || 'None specific'}`).join('\n\n')}
+   - Score: ${p.frictionScore} | Sessions: ${p.sessions}
+   - Rage: ${p.rageClicks}, Dead: ${p.deadClicks}, Thrash: ${p.mouseThrashes}
+   - Form: ${p.formAbandonments} abandons, ${p.fieldSkips} skips
+   - Issues: ${p.topIssues.map(issue => `${issue.type} on "${issue.element}" (${issue.count}x)`).join(', ') || 'None'}`).join('\n\n')}
 
 FORM FRICTION:
 ${data.formFriction.map((f, i) => `${i + 1}. Form on ${f.path}
    - Abandonments: ${f.abandonments}
-   - Problem Fields: ${f.problemFields.map(pf => `"${pf.fieldLabel || pf.fieldName}" (${pf.skips} skips, ${pf.abandonedAt} abandoned here)`).join(', ') || 'None specific'}`).join('\n\n')}
+   - Problem Fields: ${f.problemFields.map(pf => `"${pf.fieldLabel || pf.fieldName}" (${pf.skips} skips, ${pf.abandonedAt} abandoned here)`).join(', ') || 'None'}`).join('\n\n')}
 
-Based on this data, provide a comprehensive friction report in JSON format:
+=== OUTPUT FORMAT ===
+
+Return a JSON object with psychological insights:
 
 {
-  "summary": "2-3 sentence executive summary of the friction situation",
+  "summary": "2-3 sentence executive summary explaining friction patterns and their psychological roots",
   "frictionLevel": "low|medium|high|critical",
+  "userExperience": {
+    "emotionalState": "How users likely feel (frustrated, confused, anxious, etc.)",
+    "mentalModelViolations": ["List of ways the site violates user expectations"],
+    "cognitiveLoadAssessment": "low|moderate|high|overwhelming"
+  },
   "keyFindings": [
     {
       "finding": "Specific finding",
       "severity": "critical|high|medium|low",
-      "evidence": "What data supports this",
-      "impact": "How this affects users/business"
+      "evidence": "Data supporting this",
+      "psychologicalCause": "UX principle explaining WHY (e.g., 'Fitts's Law violation - button too small')",
+      "userMindset": "What the user is thinking/feeling when this happens",
+      "impact": "Business and user impact"
     }
   ],
   "topProblems": [
     {
-      "problem": "Specific problem description",
-      "location": "Where it occurs (page/element)",
+      "problem": "Specific problem",
+      "location": "Page/element",
       "frequency": "How often",
-      "recommendation": "Specific action to fix"
+      "rootCause": "Psychological/UX root cause",
+      "userThinking": "What users expect vs what happens",
+      "recommendation": "Specific fix grounded in UX principles"
     }
   ],
   "formIssues": [
     {
       "form": "Which form",
       "issue": "What's wrong",
-      "problemField": "Which field is problematic",
-      "recommendation": "How to fix"
+      "problemField": "Which field",
+      "psychologicalBarrier": "Why users struggle (privacy, cognitive load, unclear value, etc.)",
+      "recommendation": "Fix based on form UX best practices"
+    }
+  ],
+  "uxPatterns": [
+    {
+      "pattern": "Named UX pattern (e.g., 'Decision Paralysis', 'Affordance Confusion', 'Cognitive Overload')",
+      "principle": "UX law/principle that explains it",
+      "evidence": "What data shows this",
+      "userExperience": "How this feels to users",
+      "solution": "How to address it"
     }
   ],
   "prioritizedActions": [
     {
       "priority": 1,
-      "action": "Specific action to take",
+      "action": "Specific action",
       "effort": "low|medium|high",
       "impact": "low|medium|high",
-      "rationale": "Why this should be done first"
+      "psychologicalRationale": "Why this matters for user psychology",
+      "expectedOutcome": "What should improve"
     }
   ],
-  "trendsAndPatterns": [
-    "Pattern or trend observed"
-  ]
+  "peakEndAnalysis": {
+    "currentPeakMoments": "What are the worst friction peaks",
+    "endingExperience": "How do sessions typically end",
+    "recommendations": "How to improve peaks and endings per Peak-End Rule"
+  }
 }
 
-Focus on actionable insights. Be specific about elements and pages. Prioritize by business impact.
+Focus on EXPLAINING user psychology, not just describing data. Reference specific UX principles. Be actionable and specific.
 Return ONLY the JSON object.`;
 
   try {
@@ -428,7 +482,7 @@ Return ONLY the JSON object.`;
     
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 2000,
+      max_tokens: 3000,
       messages: [{ role: 'user', content: prompt }],
     });
 

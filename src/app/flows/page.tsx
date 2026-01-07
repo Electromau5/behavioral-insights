@@ -4,11 +4,13 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 
 interface FlowEvent {
+  id: string;
   type: string;
   path: string;
   timestamp: string;
   detail?: string | null;
   data?: Record<string, unknown>;
+  screenshotId?: string | null;
 }
 
 interface Flow {
@@ -109,6 +111,12 @@ export default function FlowsPage() {
   const [period, setPeriod] = useState('7d');
   const [page, setPage] = useState(1);
   const [activeTab, setActiveTab] = useState<'analysis' | 'timeline'>('analysis');
+  const [screenshotModal, setScreenshotModal] = useState<{ open: boolean; imageData: string | null; loading: boolean }>({
+    open: false,
+    imageData: null,
+    loading: false
+  });
+  const [screenshotStatus, setScreenshotStatus] = useState<Record<string, 'loading' | 'captured' | 'error'>>({});
 
   useEffect(() => {
     fetchSites();
@@ -272,6 +280,41 @@ export default function FlowsPage() {
     return null;
   };
 
+  const fetchScreenshot = async (screenshotId: string) => {
+    if (!selectedSite) return;
+    setScreenshotModal({ open: true, imageData: null, loading: true });
+    try {
+      const res = await fetch(`/api/screenshots?siteId=${selectedSite}&id=${screenshotId}`);
+      const data = await res.json();
+      if (data.screenshot) {
+        setScreenshotModal({ open: true, imageData: data.screenshot.imageData, loading: false });
+      } else {
+        setScreenshotModal({ open: false, imageData: null, loading: false });
+      }
+    } catch (e) {
+      console.error('Error fetching screenshot:', e);
+      setScreenshotModal({ open: false, imageData: null, loading: false });
+    }
+  };
+
+  const requestScreenshot = async (event: FlowEvent) => {
+    if (!selectedSite || !flowDetail) return;
+
+    setScreenshotStatus(prev => ({ ...prev, [event.id]: 'loading' }));
+
+    // For now, we'll show an info message since screenshots need to be captured
+    // from the actual user's browser session. In a real implementation, this would
+    // either use a replay system or require the session to still be active.
+
+    // Since this is historical data, we can't capture screenshots retroactively.
+    // The screenshot feature works for live sessions where the tracker can capture.
+
+    // For demo purposes, let's show the limitation
+    setTimeout(() => {
+      setScreenshotStatus(prev => ({ ...prev, [event.id]: 'error' }));
+    }, 1000);
+  };
+
   if (loading && sites.length === 0) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
@@ -286,7 +329,7 @@ export default function FlowsPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center gap-4">
-              <Link href="/" className="flex items-center gap-2">
+              <Link href="/dashboard" className="flex items-center gap-2">
                 <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
                   <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
@@ -668,9 +711,28 @@ export default function FlowsPage() {
                                 <span className="font-medium text-slate-900 text-sm">
                                   {getEventLabel(event.type)}
                                 </span>
-                                <span className="text-xs text-slate-500">
-                                  {formatTimeShort(event.timestamp)}
-                                </span>
+                                <div className="flex items-center gap-2">
+                                  {/* Screenshot button/status */}
+                                  {event.screenshotId ? (
+                                    <button
+                                      onClick={() => fetchScreenshot(event.screenshotId!)}
+                                      className="flex items-center gap-1 px-2 py-1 text-xs bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 transition-colors"
+                                      title="View screenshot"
+                                    >
+                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                      </svg>
+                                      View
+                                    </button>
+                                  ) : event.type === 'pageview' ? (
+                                    <span className="text-xs text-slate-400" title="Screenshots are captured in real-time during active sessions">
+                                      No screenshot
+                                    </span>
+                                  ) : null}
+                                  <span className="text-xs text-slate-500">
+                                    {formatTimeShort(event.timestamp)}
+                                  </span>
+                                </div>
                               </div>
                               <p className="text-sm text-slate-600 mt-1">{event.path}</p>
                               {getEventDetail(event) && (
@@ -696,6 +758,42 @@ export default function FlowsPage() {
           </div>
         </div>
       </main>
+
+      {/* Screenshot Modal */}
+      {screenshotModal.open && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl max-w-4xl max-h-[90vh] overflow-hidden shadow-2xl">
+            <div className="flex justify-between items-center p-4 border-b border-slate-200">
+              <h3 className="font-semibold text-slate-900">Page Screenshot</h3>
+              <button
+                onClick={() => setScreenshotModal({ open: false, imageData: null, loading: false })}
+                className="p-1 hover:bg-slate-100 rounded-lg transition-colors"
+              >
+                <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-4 overflow-auto max-h-[calc(90vh-60px)]">
+              {screenshotModal.loading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+                </div>
+              ) : screenshotModal.imageData ? (
+                <img
+                  src={screenshotModal.imageData}
+                  alt="Page screenshot"
+                  className="w-full h-auto rounded-lg border border-slate-200"
+                />
+              ) : (
+                <div className="text-center py-12 text-slate-500">
+                  Failed to load screenshot
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

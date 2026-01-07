@@ -85,6 +85,22 @@ export const insights = pgTable('insights', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
+// Screenshots table for on-demand page captures
+export const screenshots = pgTable('screenshots', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  siteId: uuid('site_id').references(() => sites.id).notNull(),
+  sessionId: text('session_id').notNull(),
+  eventId: uuid('event_id').references(() => events.id),
+  path: text('path').notNull(),
+  url: text('url').notNull(),
+  imageData: text('image_data').notNull(), // Base64 encoded image
+  width: integer('width'),
+  height: integer('height'),
+  deviceType: text('device_type'),
+  capturedAt: timestamp('captured_at').defaultNow().notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
 // User flows table (kept for potential future use)
 export const userFlows = pgTable('user_flows', {
   id: uuid('id').primaryKey().defaultRandom(),

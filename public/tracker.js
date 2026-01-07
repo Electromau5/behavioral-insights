@@ -7,6 +7,7 @@
   const script = document.currentScript;
   const SITE_ID = script?.getAttribute('data-site-id');
   const API_URL = script?.src.replace('/tracker.js', '/api/collect');
+  const SCREENSHOT_API_URL = script?.src.replace('/tracker.js', '/api/screenshots');
   
   if (!SITE_ID) {
     console.warn('[Behavioral Insights] Missing data-site-id attribute');
@@ -494,12 +495,51 @@
   // STANDARD TRACKING
   // ==========================================
 
+  // Check if auto-screenshot is enabled via data attribute
+  const AUTO_SCREENSHOT = script?.getAttribute('data-auto-screenshot') === 'true';
+
   function trackPageView() {
-    sendEvent('pageview', { 
+    const eventData = {
       title: document.title,
       hash: window.location.hash || null,
       search: window.location.search || null
-    });
+    };
+
+    sendEvent('pageview', eventData);
+
+    // Capture screenshot after page load if auto-screenshot is enabled
+    if (AUTO_SCREENSHOT) {
+      // Wait for page to fully render
+      setTimeout(function() {
+        captureAndSendPageviewScreenshot();
+      }, 1500);
+    }
+  }
+
+  function captureAndSendPageviewScreenshot() {
+    // Check if captureScreenshot function is ready
+    if (typeof captureScreenshot !== 'function') {
+      // Retry after html2canvas loads
+      loadHtml2Canvas(function(error) {
+        if (!error) {
+          captureScreenshot({ scale: 0.4, quality: 0.5 })
+            .then(function(data) {
+              return sendScreenshot(data, null);
+            })
+            .catch(function(err) {
+              console.warn('[Behavioral Insights] Screenshot capture failed:', err.message);
+            });
+        }
+      });
+    } else {
+      captureScreenshot({ scale: 0.4, quality: 0.5 })
+        .then(function(data) {
+          return sendScreenshot(data, null);
+        })
+        .catch(function(err) {
+          console.warn('[Behavioral Insights] Screenshot capture failed:', err.message);
+        });
+    }
   }
 
   function trackClick(event) {
@@ -769,6 +809,128 @@
     init();
   }
 
+  // ==========================================
+  // SCREENSHOT CAPTURE
+  // ==========================================
+
+  let html2canvasLoaded = false;
+  let html2canvasLoading = false;
+  let pendingScreenshotCallbacks = [];
+
+  function loadHtml2Canvas(callback) {
+    if (html2canvasLoaded) {
+      callback();
+      return;
+    }
+
+    pendingScreenshotCallbacks.push(callback);
+
+    if (html2canvasLoading) {
+      return;
+    }
+
+    html2canvasLoading = true;
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+    script.onload = function() {
+      html2canvasLoaded = true;
+      html2canvasLoading = false;
+      pendingScreenshotCallbacks.forEach(function(cb) { cb(); });
+      pendingScreenshotCallbacks = [];
+    };
+    script.onerror = function() {
+      html2canvasLoading = false;
+      pendingScreenshotCallbacks.forEach(function(cb) { cb(new Error('Failed to load html2canvas')); });
+      pendingScreenshotCallbacks = [];
+    };
+    document.head.appendChild(script);
+  }
+
+  function captureScreenshot(options) {
+    options = options || {};
+    return new Promise(function(resolve, reject) {
+      loadHtml2Canvas(function(error) {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        // Hide sensitive elements before capture
+        const sensitiveSelectors = [
+          'input[type="password"]',
+          '[data-sensitive]',
+          '.sensitive',
+          '[autocomplete="cc-number"]',
+          '[autocomplete="cc-csc"]'
+        ];
+        const hiddenElements = [];
+        sensitiveSelectors.forEach(function(selector) {
+          document.querySelectorAll(selector).forEach(function(el) {
+            if (el.style.visibility !== 'hidden') {
+              hiddenElements.push({ el: el, visibility: el.style.visibility });
+              el.style.visibility = 'hidden';
+            }
+          });
+        });
+
+        window.html2canvas(document.body, {
+          scale: options.scale || 0.5, // Reduce size
+          logging: false,
+          useCORS: true,
+          allowTaint: true,
+          backgroundColor: '#ffffff',
+          width: window.innerWidth,
+          height: Math.min(document.body.scrollHeight, window.innerHeight * 2), // Limit height
+          windowWidth: window.innerWidth,
+          windowHeight: window.innerHeight,
+          x: window.scrollX,
+          y: window.scrollY
+        }).then(function(canvas) {
+          // Restore hidden elements
+          hiddenElements.forEach(function(item) {
+            item.el.style.visibility = item.visibility;
+          });
+
+          // Convert to JPEG for smaller size
+          const imageData = canvas.toDataURL('image/jpeg', options.quality || 0.6);
+          resolve({
+            imageData: imageData,
+            width: canvas.width,
+            height: canvas.height,
+            url: window.location.href,
+            path: window.location.pathname,
+            timestamp: new Date().toISOString()
+          });
+        }).catch(function(err) {
+          // Restore hidden elements on error
+          hiddenElements.forEach(function(item) {
+            item.el.style.visibility = item.visibility;
+          });
+          reject(err);
+        });
+      });
+    });
+  }
+
+  function sendScreenshot(screenshotData, eventId) {
+    const payload = {
+      siteId: SITE_ID,
+      sessionId: sessionId,
+      visitorId: getVisitorId(),
+      eventId: eventId || null,
+      ...screenshotData,
+      deviceType: getDeviceType()
+    };
+
+    return fetch(SCREENSHOT_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).then(function(res) {
+      return res.json();
+    });
+  }
+
   // Public API
   window.BehavioralInsights = {
     track: function(eventName, data) { 
@@ -795,6 +957,48 @@
       if (formElement) {
         checkFormAbandonment(formElement, reason || 'manual');
       }
+    },
+    // Screenshot capture API
+    captureScreenshot: function(options) {
+      return captureScreenshot(options);
+    },
+    // Capture and send screenshot to server
+    takeScreenshot: function(eventId, options) {
+      return captureScreenshot(options).then(function(data) {
+        return sendScreenshot(data, eventId);
+      });
     }
   };
+
+  // Listen for screenshot requests from the analytics dashboard
+  window.addEventListener('message', function(event) {
+    // Verify origin matches the tracker script origin
+    const scriptOrigin = new URL(script?.src || window.location.href).origin;
+
+    if (event.data && event.data.type === 'BI_SCREENSHOT_REQUEST') {
+      const requestId = event.data.requestId;
+      const eventId = event.data.eventId;
+
+      captureScreenshot(event.data.options || {})
+        .then(function(data) {
+          return sendScreenshot(data, eventId);
+        })
+        .then(function(result) {
+          window.parent.postMessage({
+            type: 'BI_SCREENSHOT_RESPONSE',
+            requestId: requestId,
+            success: true,
+            data: result
+          }, '*');
+        })
+        .catch(function(error) {
+          window.parent.postMessage({
+            type: 'BI_SCREENSHOT_RESPONSE',
+            requestId: requestId,
+            success: false,
+            error: error.message
+          }, '*');
+        });
+    }
+  });
 })();

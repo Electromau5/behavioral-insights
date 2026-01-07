@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { events, sessions, sites } from '@/lib/schema';
+import { events, sessions, sites, screenshots } from '@/lib/schema';
 import { eq, and, gte, lte, desc, asc, sql } from 'drizzle-orm';
 import Anthropic from '@anthropic-ai/sdk';
 
@@ -234,7 +234,29 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: 'Session not found' }, { status: 404 });
       }
 
-      // Build the flow timeline
+      // Get screenshots for this session
+      const sessionScreenshots = await db
+        .select({
+          id: screenshots.id,
+          eventId: screenshots.eventId,
+          path: screenshots.path,
+          capturedAt: screenshots.capturedAt,
+        })
+        .from(screenshots)
+        .where(and(
+          eq(screenshots.siteId, siteId),
+          eq(screenshots.sessionId, sessionId)
+        ));
+
+      // Create a map of eventId -> screenshotId for quick lookup
+      const screenshotsByEvent = new Map<string, string>();
+      sessionScreenshots.forEach(s => {
+        if (s.eventId) {
+          screenshotsByEvent.set(s.eventId, s.id);
+        }
+      });
+
+      // Build the flow timeline with screenshot info
       const flowTimeline = sessionEvents.map(event => ({
         id: event.id,
         type: event.eventType,
@@ -242,7 +264,8 @@ export async function GET(request: NextRequest) {
         path: event.path,
         url: event.url,
         data: event.eventData,
-        deviceType: event.deviceType
+        deviceType: event.deviceType,
+        screenshotId: screenshotsByEvent.get(event.id) || null
       }));
 
       // Calculate flow summary
