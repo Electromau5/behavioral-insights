@@ -64,6 +64,10 @@ export const sessions = pgTable('sessions', {
   referrer: text('referrer'),
   deviceType: text('device_type'),
   isBounce: boolean('is_bounce').default(true),
+  // Geolocation fields
+  country: text('country'),
+  region: text('region'), // State/province
+  city: text('city'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { events, sessions, sites } from '@/lib/schema';
 import { eq, and } from 'drizzle-orm';
+import { getClientIP, getGeoLocation } from '@/lib/geolocation';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -41,6 +42,10 @@ export async function POST(request: NextRequest) {
     const existingSession = await db.query.sessions.findFirst({ where: eq(sessions.id, sessionId) });
 
     if (!existingSession) {
+      // Get geolocation for new sessions
+      const clientIP = getClientIP(request);
+      const geo = clientIP ? await getGeoLocation(clientIP) : { country: null, region: null, city: null };
+
       await db.insert(sessions).values({
         id: sessionId, siteId, visitorId,
         startedAt: new Date(timestamp),
@@ -49,6 +54,9 @@ export async function POST(request: NextRequest) {
         pageViews: eventType === 'pageview' ? 1 : 0,
         clicks: eventType === 'click' ? 1 : 0,
         isBounce: true,
+        country: geo.country,
+        region: geo.region,
+        city: geo.city,
       });
     } else {
       const updates: Record<string, unknown> = {
