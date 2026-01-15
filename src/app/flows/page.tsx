@@ -24,6 +24,9 @@ interface Flow {
   deviceType: string | null;
   referrer: string | null;
   isBounce: boolean;
+  country: string | null;
+  region: string | null;
+  city: string | null;
   totalEvents: number;
   pageViews: number;
   clicks: number;
@@ -409,6 +412,14 @@ export default function FlowsPage() {
                       <div className="text-sm font-medium text-slate-900 truncate mb-1">
                         {flow.entryPage || '/'}
                       </div>
+                      {(flow.city || flow.region || flow.country) && (
+                        <div className="text-xs text-slate-500 mb-1 flex items-center gap-1">
+                          <span>📍</span>
+                          <span className="truncate">
+                            {[flow.city, flow.region, flow.country].filter(Boolean).join(', ')}
+                          </span>
+                        </div>
+                      )}
                       <div className="flex items-center gap-3 text-xs text-slate-500">
                         <span>{flow.pageViews} pages</span>
                         <span>{flow.clicks} clicks</span>
@@ -458,6 +469,12 @@ export default function FlowsPage() {
                       <p className="text-sm text-slate-500">
                         {formatTime(selectedFlow.startedAt)} • {formatDuration(selectedFlow.duration)}
                       </p>
+                      {(selectedFlow.city || selectedFlow.region || selectedFlow.country) && (
+                        <p className="text-sm text-slate-500 flex items-center gap-1 mt-1">
+                          <span>📍</span>
+                          {[selectedFlow.city, selectedFlow.region, selectedFlow.country].filter(Boolean).join(', ')}
+                        </p>
+                      )}
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-2xl">{getDeviceIcon(selectedFlow.deviceType)}</span>

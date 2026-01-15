@@ -393,7 +393,10 @@ export async function GET(request: NextRequest) {
           exitPage: session.exitPage,
           deviceType: session.deviceType,
           referrer: session.referrer,
-          isBounce: session.isBounce
+          isBounce: session.isBounce,
+          country: session.country,
+          region: session.region,
+          city: session.city
         },
         summary: {
           totalEvents: sessionEvents.length,
@@ -480,6 +483,9 @@ export async function GET(request: NextRequest) {
           deviceType: session.deviceType,
           referrer: session.referrer,
           isBounce: session.isBounce,
+          country: session.country,
+          region: session.region,
+          city: session.city,
           totalEvents: sessionEvents.length,
           pageViews: pageViews.length,
           clicks: clicks.length,
