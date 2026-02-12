@@ -204,6 +204,14 @@ After restarting Claude Code, say:
 
 ---
 
+## Shortcut Commands
+
+| Command | Action |
+|---------|--------|
+| `Update MD and sync GitHub` | Update SESSION_NOTES.md with current conversation progress, commit, and push to GitHub |
+
+---
+
 ## Tech Stack Reference
 
 | Component | Technology |
