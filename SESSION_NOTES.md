@@ -322,6 +322,61 @@ After restarting Claude Code, say:
 
 ---
 
+## Session Update: February 12, 2026 (Continued - Part 3)
+
+### Vercel MCP Stdio Transport Failure
+
+**Problem:** Vercel MCP still not connecting after multiple Claude Code restarts, despite correct configuration in `~/.claude/settings.json`.
+
+**Diagnosis:**
+1. Tested MCP server directly - it responds correctly to JSON-RPC initialize requests
+2. API token works (verified in previous session)
+3. The stdio transport in `~/.claude/settings.json` silently fails to connect
+
+**Test Result (MCP server works directly):**
+```bash
+echo '{"jsonrpc":"2.0","id":1,"method":"initialize",...}' | npx -y vercel-mcp "VERCEL_API_KEY=<token>"
+# Response: {"result":{"protocolVersion":"2024-11-05","capabilities":{"tools":{"listChanged":true}},"serverInfo":{"name":"vercel-mcp","version":"1.0.0"}},"jsonrpc":"2.0","id":1}
+```
+
+**Solution Applied:** Switched to HTTP transport at the project level.
+
+---
+
+### Claude Code Configuration Files
+
+| File | Purpose |
+|------|---------|
+| `~/.claude/settings.json` | Global MCP settings (all projects) - stdio transport for Vercel (not working) |
+| `~/.claude.json` | User/project-specific config - where project-level MCP overrides go |
+
+**Fix Applied to `~/.claude.json`:**
+Added Vercel MCP with HTTP transport for this project:
+```json
+"/Users/prits6/Desktop/Wealth/Artemis Design Labs/AI Projects/behavioral-insights": {
+  "mcpServers": {
+    "vercel": {
+      "type": "http",
+      "url": "https://mcp.vercel.com/mcp"
+    }
+  },
+  ...
+}
+```
+
+**Note:** HTTP transport uses Vercel's official MCP endpoint and authenticates via OAuth in the browser (not API token).
+
+---
+
+### Next Steps (Updated)
+
+1. **Restart Claude Code** to load new HTTP-based Vercel MCP config
+2. **Authenticate via browser** when prompted by Vercel OAuth
+3. **Verify Vercel MCP tools** are available (should see `mcp__vercel__*` tools)
+4. Continue with Node.js version fix and deployment
+
+---
+
 ## Tech Stack Reference
 
 | Component | Technology |
