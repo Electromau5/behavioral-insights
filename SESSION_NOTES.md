@@ -189,10 +189,78 @@ Found invalid Node.js Version: "24.x". Please set Node.js Version to 22.x in you
 
 ---
 
+## Session Update: February 12, 2026 (Continued)
+
+### Vercel MCP Connection Fix
+
+**Problem:** Vercel MCP was not appearing in connected MCPs after restarting Claude Code.
+
+**Root Cause:** The `vercel-mcp` package expects the API key as a **command-line argument**, not an environment variable.
+
+**Fix Applied to `~/.claude/settings.json`:**
+```json
+// Before (broken)
+"vercel": {
+  "command": "/opt/homebrew/bin/npx",
+  "args": ["-y", "vercel-mcp"],
+  "env": {
+    "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
+    "VERCEL_API_TOKEN": "<token>"
+  }
+}
+
+// After (fixed)
+"vercel": {
+  "command": "/opt/homebrew/bin/npx",
+  "args": ["-y", "vercel-mcp", "VERCEL_API_KEY=<token>"],
+  "env": {
+    "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+  }
+}
+```
+
+---
+
+### MCP Configuration Discovery
+
+**Finding:** Magic MCP was showing as connected but wasn't in `~/.claude/settings.json`.
+
+**Explanation:** Claude Code reads MCP configurations from multiple locations:
+1. `~/.claude/settings.json` - Claude Code-specific settings
+2. `~/.cursor/mcp.json` - **Shared with Cursor** (this is where Magic MCP is defined)
+
+This allows MCP servers to be shared between Cursor and Claude Code automatically.
+
+**Magic MCP Config (in `~/.cursor/mcp.json`):**
+```json
+"Magic MCP": {
+  "command": "npx",
+  "args": ["-y", "@21st-dev/magic@latest", "API_KEY=\"<key>\""]
+}
+```
+
+---
+
+### Node.js Version - Local Config Found
+
+**Discovery:** The `.vercel/project.json` file in the project has `nodeVersion: "24.x"` hardcoded:
+```json
+{
+  "projectId": "prj_6YkqN6EZ8WhZD6awgr8BA7FULdcA",
+  "settings": {
+    "nodeVersion": "24.x"
+  }
+}
+```
+
+This local config may be overriding both the package.json `engines` field and Vercel dashboard settings.
+
+---
+
 ## Next Steps
 
 1. **Restart Claude Code** to activate Vercel MCP tools
-2. **Use Vercel MCP** to update Node.js version to 22.x in project settings
+2. **Fix `.vercel/project.json`** - change nodeVersion to "22.x" OR use Vercel MCP to update project settings
 3. **Verify deployment succeeds** after Node.js version fix
 4. **Test password reset flow** after deployment
 5. **Fix security issue** - sanitize error messages in API routes
@@ -200,7 +268,7 @@ Found invalid Node.js Version: "24.x". Please set Node.js Version to 22.x in you
 
 ### Resume Instructions
 After restarting Claude Code, say:
-> "Use the Vercel MCP to update the Node.js version to 22.x for the behavioral-insights project and check the deployment logs"
+> "Use the Vercel MCP to update the Node.js version to 22.x for the behavioral-insights project and trigger a new deployment"
 
 ---
 
