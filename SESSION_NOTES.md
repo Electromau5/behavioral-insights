@@ -377,6 +377,41 @@ Added Vercel MCP with HTTP transport for this project:
 
 ---
 
+## Session Update: February 12, 2026 (Continued - Part 4)
+
+### Vercel MCP Configuration Fix
+
+**Problem:** Vercel MCP still not connecting after trying both stdio and HTTP transport approaches.
+
+**Discovery:** Upon reviewing the global settings (`~/.claude/settings.json`), found that the API key was being passed incorrectly:
+
+```json
+// Before (broken - API key as command line argument)
+"vercel": {
+  "command": "/opt/homebrew/bin/npx",
+  "args": ["-y", "vercel-mcp", "VERCEL_API_KEY=<token>"],
+  "env": {
+    "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+  }
+}
+
+// After (fixed - API key as environment variable)
+"vercel": {
+  "command": "/opt/homebrew/bin/npx",
+  "args": ["-y", "vercel-mcp"],
+  "env": {
+    "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
+    "VERCEL_API_KEY": "<token>"
+  }
+}
+```
+
+**Root Cause:** The `vercel-mcp` package reads the API key from the `VERCEL_API_KEY` **environment variable**, not from command line arguments. Passing it as an argument was causing the MCP server to fail authentication.
+
+**Status:** Configuration fixed. Requires Claude Code restart to take effect.
+
+---
+
 ## Tech Stack Reference
 
 | Component | Technology |
