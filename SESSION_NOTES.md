@@ -257,18 +257,60 @@ This local config may be overriding both the package.json `engines` field and Ve
 
 ---
 
+## Session Update: February 12, 2026 (Continued - Part 2)
+
+### Vercel MCP Still Not Connecting
+
+**Problem:** Despite correct config format, Vercel MCP was still not appearing after multiple Claude Code restarts.
+
+**Troubleshooting Performed:**
+1. Verified MCP command works: `npx -y vercel-mcp VERCEL_API_KEY=<token>`
+2. Tested API token validity via curl - token authenticated successfully
+3. **Root Cause Found:** The old token (`vck_...`) had **limited permissions** - it could authenticate but returned 0 projects
+
+**API Test Results:**
+```bash
+# Token authenticated but showed no projects
+curl -H "Authorization: Bearer <old-token>" "https://api.vercel.com/v9/projects"
+# Response: {"projects":[],"pagination":{"count":0}}
+
+# User info showed defaultTeamId exists
+curl -H "Authorization: Bearer <old-token>" "https://api.vercel.com/v2/user"
+# Response showed: "defaultTeamId": "team_Wl69zG5JVXG5AeXwCvvKSiSt"
+
+# But team/project queries failed with forbidden/not_found
+```
+
+**Solution:** Generated a new Vercel API token with **Full Account** scope at https://vercel.com/account/tokens
+
+**Updated Config (`~/.claude/settings.json`):**
+```json
+"vercel": {
+  "command": "/opt/homebrew/bin/npx",
+  "args": ["-y", "vercel-mcp", "VERCEL_API_KEY=<new-full-access-token>"],
+  "env": {
+    "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+  }
+}
+```
+
+**Status:** New token configured. Awaiting Claude Code restart to verify MCP connection.
+
+---
+
 ## Next Steps
 
-1. **Restart Claude Code** to activate Vercel MCP tools
-2. **Fix `.vercel/project.json`** - change nodeVersion to "22.x" OR use Vercel MCP to update project settings
-3. **Verify deployment succeeds** after Node.js version fix
-4. **Test password reset flow** after deployment
-5. **Fix security issue** - sanitize error messages in API routes
-6. **Run database migrations** if tables don't exist: `npm run db:push`
+1. **Restart Claude Code** to activate Vercel MCP with new token
+2. **Verify Vercel MCP is connected** (should see `mcp__vercel__*` tools)
+3. **Fix Node.js version** via Vercel MCP or `.vercel/project.json`
+4. **Trigger new deployment** and verify it succeeds
+5. **Test password reset flow** after deployment
+6. **Fix security issue** - sanitize error messages in API routes
+7. **Run database migrations** if tables don't exist: `npm run db:push`
 
 ### Resume Instructions
 After restarting Claude Code, say:
-> "Use the Vercel MCP to update the Node.js version to 22.x for the behavioral-insights project and trigger a new deployment"
+> "Is the Vercel MCP connected now? If so, update the Node.js version to 22.x and trigger a new deployment"
 
 ---
 
