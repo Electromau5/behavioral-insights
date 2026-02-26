@@ -208,6 +208,7 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '20');
     const analyze = searchParams.get('analyze') === 'true';
+    const sortBy = searchParams.get('sortBy') || 'recent';
 
     if (!siteId) {
       return NextResponse.json({ error: 'Site ID is required' }, { status: 400 });
@@ -420,6 +421,21 @@ export async function GET(request: NextRequest) {
     const start = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
     const offset = (page - 1) * limit;
 
+    // Determine sort order based on sortBy parameter
+    const getOrderBy = () => {
+      switch (sortBy) {
+        case 'clicks':
+          return desc(sessions.clicks);
+        case 'duration':
+          return desc(sessions.duration);
+        case 'pages':
+          return desc(sessions.pageViews);
+        case 'recent':
+        default:
+          return desc(sessions.startedAt);
+      }
+    };
+
     const allSessions = await db
       .select()
       .from(sessions)
@@ -428,7 +444,7 @@ export async function GET(request: NextRequest) {
         gte(sessions.startedAt, start),
         lte(sessions.startedAt, now)
       ))
-      .orderBy(desc(sessions.startedAt))
+      .orderBy(getOrderBy())
       .limit(limit)
       .offset(offset);
 

@@ -113,6 +113,7 @@ export default function FlowsPage() {
   const [flowDetail, setFlowDetail] = useState<FlowDetail | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [period, setPeriod] = useState('7d');
+  const [sortBy, setSortBy] = useState<'recent' | 'clicks' | 'duration' | 'pages'>('recent');
   const [page, setPage] = useState(1);
   const [activeTab, setActiveTab] = useState<'analysis' | 'timeline' | 'chat'>('analysis');
   const [screenshotModal, setScreenshotModal] = useState<{ open: boolean; imageData: string | null; loading: boolean }>({
@@ -130,7 +131,7 @@ export default function FlowsPage() {
     if (selectedSite) {
       fetchFlows();
     }
-  }, [selectedSite, period, page]);
+  }, [selectedSite, period, page, sortBy]);
 
   const fetchSites = async () => {
     try {
@@ -150,7 +151,7 @@ export default function FlowsPage() {
     if (!selectedSite) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/flows?siteId=${selectedSite}&period=${period}&page=${page}&limit=20`);
+      const res = await fetch(`/api/flows?siteId=${selectedSite}&period=${period}&page=${page}&limit=20&sortBy=${sortBy}`);
       const data = await res.json();
       setFlows(data.flows || []);
       setPagination(data.pagination);
@@ -365,20 +366,35 @@ export default function FlowsPage() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-2xl font-bold text-slate-900">User Flows</h1>
-          <div className="flex gap-2">
-            {['7d', '30d', '90d'].map((p) => (
-              <button
-                key={p}
-                onClick={() => { setPeriod(p); setPage(1); }}
-                className={`px-4 py-2 rounded-lg text-sm font-medium ${
-                  period === p
-                    ? 'bg-indigo-600 text-white'
-                    : 'bg-white text-slate-600 border border-slate-300'
-                }`}
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-slate-500">Sort by:</span>
+              <select
+                value={sortBy}
+                onChange={(e) => { setSortBy(e.target.value as 'recent' | 'clicks' | 'duration' | 'pages'); setPage(1); }}
+                className="border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               >
-                {p === '7d' ? 'Last 7 days' : p === '30d' ? 'Last 30 days' : 'Last 90 days'}
-              </button>
-            ))}
+                <option value="recent">Most Recent</option>
+                <option value="clicks">Most Clicks</option>
+                <option value="duration">Longest Duration</option>
+                <option value="pages">Most Pages</option>
+              </select>
+            </div>
+            <div className="flex gap-2">
+              {['7d', '30d', '90d'].map((p) => (
+                <button
+                  key={p}
+                  onClick={() => { setPeriod(p); setPage(1); }}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium ${
+                    period === p
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-white text-slate-600 border border-slate-300'
+                  }`}
+                >
+                  {p === '7d' ? 'Last 7 days' : p === '30d' ? 'Last 30 days' : 'Last 90 days'}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
