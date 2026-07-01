@@ -46,6 +46,9 @@ export default function Dashboard() {
   const [trackingCode, setTrackingCode] = useState('');
   const [generatingInsights, setGeneratingInsights] = useState(false);
   const [period, setPeriod] = useState('7d');
+  const [showTrackingCode, setShowTrackingCode] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deletingSite, setDeletingSite] = useState(false);
 
   useEffect(() => { fetchSites(); }, []);
   
@@ -113,6 +116,26 @@ export default function Dashboard() {
     } catch (e) { console.error(e); }
   };
 
+  const deleteSite = async () => {
+    if (!selectedSite) return;
+    setDeletingSite(true);
+    try {
+      await fetch(`/api/sites?id=${selectedSite}`, { method: 'DELETE' });
+      const remaining = sites.filter(s => s.id !== selectedSite);
+      setSites(remaining);
+      setSelectedSite(remaining.length > 0 ? remaining[0].id : null);
+      setMetrics(null);
+      setInsights([]);
+    } catch (e) { console.error(e); }
+    setDeletingSite(false);
+    setShowDeleteConfirm(false);
+  };
+
+  const currentSite = sites.find(s => s.id === selectedSite);
+  const currentTrackingCode = selectedSite
+    ? `<script src="https://behavioral-insights.vercel.app/tracker.js" data-site-id="${selectedSite}"></script>`
+    : '';
+
   const formatDuration = (s: number) => s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
   
   const getSeverityColor = (severity: string) => {
@@ -144,15 +167,35 @@ export default function Dashboard() {
                 <span className="font-semibold text-xl text-slate-900">Behavioral Insights</span>
               </Link>
               {sites.length > 0 && (
-                <select
-                  value={selectedSite || ''}
-                  onChange={(e) => setSelectedSite(e.target.value)}
-                  className="ml-4 border border-slate-300 rounded-lg px-3 py-1.5 text-sm bg-white text-slate-900"
-                >
-                  {sites.map((site) => (
-                    <option key={site.id} value={site.id}>{site.name}</option>
-                  ))}
-                </select>
+                <div className="ml-4 flex items-center gap-2">
+                  <select
+                    value={selectedSite || ''}
+                    onChange={(e) => setSelectedSite(e.target.value)}
+                    className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm bg-white text-slate-900"
+                  >
+                    {sites.map((site) => (
+                      <option key={site.id} value={site.id}>{site.name}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={() => setShowTrackingCode(true)}
+                    title="View tracking code"
+                    className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-300 hover:border-indigo-300"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => setShowDeleteConfirm(true)}
+                    title="Remove site"
+                    className="p-1.5 rounded-lg text-slate-500 hover:text-red-600 hover:bg-red-50 border border-slate-300 hover:border-red-300"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
+                </div>
               )}
             </div>
             <div className="flex items-center gap-4">
@@ -332,6 +375,70 @@ export default function Dashboard() {
           </>
         )}
       </main>
+
+      {showTrackingCode && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md mx-4">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold text-slate-900">Tracking Code</h2>
+              <button onClick={() => setShowTrackingCode(false)} className="text-slate-400 hover:text-slate-600">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <p className="text-sm text-slate-600 mb-1">Site: <span className="font-medium text-slate-900">{currentSite?.name}</span></p>
+            <p className="text-sm text-slate-600 mb-4">Add this before your closing <code className="bg-slate-100 px-1 rounded">&lt;/head&gt;</code> tag:</p>
+            <div className="bg-slate-900 rounded-lg p-4 mb-4">
+              <code className="text-sm text-emerald-400 break-all">{currentTrackingCode}</code>
+            </div>
+            <button
+              onClick={() => navigator.clipboard.writeText(currentTrackingCode)}
+              className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 rounded-lg font-medium mb-2"
+            >
+              Copy to Clipboard
+            </button>
+            <button
+              onClick={() => setShowTrackingCode(false)}
+              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-lg font-medium"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-sm mx-4">
+            <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </div>
+            <h2 className="text-lg font-semibold text-slate-900 text-center mb-2">Remove Site</h2>
+            <p className="text-sm text-slate-600 text-center mb-1">
+              Are you sure you want to remove <span className="font-medium text-slate-900">{currentSite?.name}</span>?
+            </p>
+            <p className="text-sm text-red-600 text-center mb-6">This will permanently delete all sessions, events, and data for this site.</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 rounded-lg font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={deleteSite}
+                disabled={deletingSite}
+                className="flex-1 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white py-2 rounded-lg font-medium"
+              >
+                {deletingSite ? 'Removing...' : 'Remove Site'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showAddSite && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
