@@ -9,7 +9,9 @@ export default auth((req) => {
                            req.nextUrl.pathname.startsWith('/flows');
   const isApiRoute = req.nextUrl.pathname.startsWith('/api');
   const isPublicApiRoute = req.nextUrl.pathname.startsWith('/api/collect') ||
-                           req.nextUrl.pathname.startsWith('/api/auth');
+                           req.nextUrl.pathname.startsWith('/api/auth') ||
+                           // MCP endpoint enforces its own MCP_API_KEY bearer auth
+                           req.nextUrl.pathname.startsWith('/api/mcp');
 
   // Allow public API routes
   if (isApiRoute && isPublicApiRoute) {
