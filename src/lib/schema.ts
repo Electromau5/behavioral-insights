@@ -25,6 +25,9 @@ export const sites = pgTable('sites', {
   targetAudience: text('target_audience'),
   primaryGoals: jsonb('primary_goals'), // Array of goals as JSON
   pageContext: jsonb('page_context'), // Object mapping paths to descriptions
+  // IP-based tracking exclusion
+  ipExclusionEnabled: boolean('ip_exclusion_enabled').default(false).notNull(),
+  excludedIps: jsonb('excluded_ips'), // Array of IPs or CIDR ranges, e.g. ["1.2.3.4", "10.0.0.0/8"]
 });
 
 export const events = pgTable('events', {

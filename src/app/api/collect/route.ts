@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { events, sessions, sites } from '@/lib/schema';
 import { eq, and } from 'drizzle-orm';
 import { getClientIP, getGeoLocation } from '@/lib/geolocation';
+import { isIpExcluded } from '@/lib/ip-filter';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -29,6 +30,14 @@ export async function POST(request: NextRequest) {
 
     if (!site) {
       return NextResponse.json({ error: 'Invalid site ID' }, { status: 403, headers: corsHeaders });
+    }
+
+    // Drop events from excluded IPs; respond with success so the tracker doesn't retry
+    if (site.ipExclusionEnabled) {
+      const clientIP = getClientIP(request);
+      if (clientIP && isIpExcluded(clientIP, site.excludedIps)) {
+        return NextResponse.json({ success: true, excluded: true }, { status: 200, headers: corsHeaders });
+      }
     }
 
     await db.insert(events).values({

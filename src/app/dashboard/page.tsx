@@ -8,6 +8,8 @@ interface Site {
   id: string;
   name: string;
   domain: string;
+  ipExclusionEnabled?: boolean;
+  excludedIps?: string[] | null;
 }
 
 interface Insight {
@@ -49,6 +51,13 @@ export default function Dashboard() {
   const [showTrackingCode, setShowTrackingCode] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deletingSite, setDeletingSite] = useState(false);
+  const [showIpExclusions, setShowIpExclusions] = useState(false);
+  const [ipExclusionEnabled, setIpExclusionEnabled] = useState(false);
+  const [excludedIps, setExcludedIps] = useState<string[]>([]);
+  const [newIp, setNewIp] = useState('');
+  const [ipError, setIpError] = useState('');
+  const [myIp, setMyIp] = useState<string | null>(null);
+  const [savingIps, setSavingIps] = useState(false);
 
   useEffect(() => { fetchSites(); }, []);
   
@@ -131,6 +140,62 @@ export default function Dashboard() {
     setShowDeleteConfirm(false);
   };
 
+  const openIpExclusions = async () => {
+    const site = sites.find(s => s.id === selectedSite);
+    setIpExclusionEnabled(site?.ipExclusionEnabled || false);
+    setExcludedIps(site?.excludedIps || []);
+    setNewIp('');
+    setIpError('');
+    setShowIpExclusions(true);
+    try {
+      const res = await fetch('/api/my-ip');
+      const data = await res.json();
+      setMyIp(data.ip || null);
+    } catch (e) { console.error(e); }
+  };
+
+  const addIp = (ip: string) => {
+    const value = ip.trim();
+    if (!value) return;
+    // Exact IPv4/IPv6 or IPv4 CIDR like 203.0.113.0/24
+    const isValid = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/.test(value) || /^[0-9a-fA-F:]+$/.test(value) && value.includes(':');
+    if (!isValid) {
+      setIpError('Enter a valid IP address (e.g. 203.0.113.7) or CIDR range (e.g. 203.0.113.0/24)');
+      return;
+    }
+    if (excludedIps.includes(value)) {
+      setIpError('That IP is already in the list');
+      return;
+    }
+    setExcludedIps([...excludedIps, value]);
+    setNewIp('');
+    setIpError('');
+  };
+
+  const saveIpExclusions = async () => {
+    if (!selectedSite) return;
+    setSavingIps(true);
+    setIpError('');
+    try {
+      const res = await fetch('/api/sites', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ siteId: selectedSite, ipExclusionEnabled, excludedIps })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setIpError(data.error || 'Failed to save');
+      } else {
+        setSites(sites.map(s => s.id === selectedSite ? { ...s, ipExclusionEnabled, excludedIps } : s));
+        setShowIpExclusions(false);
+      }
+    } catch (e) {
+      console.error(e);
+      setIpError('Failed to save');
+    }
+    setSavingIps(false);
+  };
+
   const currentSite = sites.find(s => s.id === selectedSite);
   const currentTrackingCode = selectedSite
     ? `<script src="https://behavioral-insights.vercel.app/tracker.js" data-site-id="${selectedSite}"></script>`
@@ -184,6 +249,19 @@ export default function Dashboard() {
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={openIpExclusions}
+                    title="IP exclusions"
+                    className={`p-1.5 rounded-lg border ${
+                      currentSite?.ipExclusionEnabled
+                        ? 'text-indigo-600 bg-indigo-50 border-indigo-300'
+                        : 'text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 border-slate-300 hover:border-indigo-300'
+                    }`}
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
                     </svg>
                   </button>
                   <button
@@ -404,6 +482,98 @@ export default function Dashboard() {
             >
               Done
             </button>
+          </div>
+        </div>
+      )}
+
+      {showIpExclusions && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md mx-4">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold text-slate-900">IP Exclusions</h2>
+              <button onClick={() => setShowIpExclusions(false)} className="text-slate-400 hover:text-slate-600">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <p className="text-sm text-slate-600 mb-4">
+              Visits from these IP addresses won&apos;t be tracked for <span className="font-medium text-slate-900">{currentSite?.name}</span>. Useful for filtering out your own visits.
+            </p>
+
+            <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 mb-4">
+              <div>
+                <p className="text-sm font-medium text-slate-900">Exclude listed IPs</p>
+                <p className="text-xs text-slate-500">{ipExclusionEnabled ? 'On — matching visits are ignored' : 'Off — all visits are tracked'}</p>
+              </div>
+              <button
+                onClick={() => setIpExclusionEnabled(!ipExclusionEnabled)}
+                role="switch"
+                aria-checked={ipExclusionEnabled}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${ipExclusionEnabled ? 'bg-indigo-600' : 'bg-slate-300'}`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${ipExclusionEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
+            </div>
+
+            <div className="mb-3">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newIp}
+                  onChange={(e) => { setNewIp(e.target.value); setIpError(''); }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addIp(newIp); } }}
+                  placeholder="203.0.113.7 or 203.0.113.0/24"
+                  className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400"
+                />
+                <button onClick={() => addIp(newIp)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium">
+                  Add
+                </button>
+              </div>
+              {ipError && <p className="text-xs text-red-600 mt-1">{ipError}</p>}
+              {myIp && !excludedIps.includes(myIp) && (
+                <button onClick={() => addIp(myIp)} className="text-xs text-indigo-600 hover:text-indigo-800 mt-1.5">
+                  + Add my current IP ({myIp})
+                </button>
+              )}
+            </div>
+
+            {excludedIps.length > 0 ? (
+              <div className="border border-slate-200 rounded-lg divide-y divide-slate-100 mb-4 max-h-48 overflow-y-auto">
+                {excludedIps.map((ip) => (
+                  <div key={ip} className="flex items-center justify-between px-3 py-2">
+                    <span className="text-sm font-mono text-slate-700">{ip}</span>
+                    <button
+                      onClick={() => setExcludedIps(excludedIps.filter(i => i !== ip))}
+                      title="Remove"
+                      className="text-slate-400 hover:text-red-600"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-slate-400 text-center border border-dashed border-slate-200 rounded-lg py-4 mb-4">No excluded IPs yet</p>
+            )}
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowIpExclusions(false)}
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 rounded-lg font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveIpExclusions}
+                disabled={savingIps}
+                className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white py-2 rounded-lg font-medium"
+              >
+                {savingIps ? 'Saving...' : 'Save'}
+              </button>
+            </div>
           </div>
         </div>
       )}

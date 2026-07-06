@@ -4,6 +4,7 @@ import { sites } from '@/lib/schema';
 import { nanoid } from 'nanoid';
 import { eq, and } from 'drizzle-orm';
 import { auth } from '@/lib/auth';
+import { isValidExclusionEntry } from '@/lib/ip-filter';
 
 export async function GET() {
   try {
@@ -67,28 +68,39 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { 
-      siteId, 
-      businessType, 
-      description, 
-      targetAudience, 
-      primaryGoals, 
-      pageContext 
-    } = await request.json();
+    const body = await request.json();
+    const { siteId } = body;
 
     if (!siteId) {
       return NextResponse.json({ error: 'Site ID is required' }, { status: 400 });
     }
 
+    // Only update fields present in the request
+    const updates: Record<string, unknown> = {};
+    if ('businessType' in body) updates.businessType = body.businessType;
+    if ('description' in body) updates.description = body.description;
+    if ('targetAudience' in body) updates.targetAudience = body.targetAudience;
+    if ('primaryGoals' in body) updates.primaryGoals = body.primaryGoals;
+    if ('pageContext' in body) updates.pageContext = body.pageContext ? JSON.stringify(body.pageContext) : null;
+    if ('ipExclusionEnabled' in body) updates.ipExclusionEnabled = Boolean(body.ipExclusionEnabled);
+    if ('excludedIps' in body) {
+      const list = body.excludedIps;
+      if (!Array.isArray(list) || list.some((ip: unknown) => typeof ip !== 'string' || !isValidExclusionEntry(ip))) {
+        return NextResponse.json(
+          { error: 'excludedIps must be an array of valid IP addresses or IPv4 CIDR ranges' },
+          { status: 400 }
+        );
+      }
+      updates.excludedIps = list.map((ip: string) => ip.trim());
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return NextResponse.json({ error: 'No fields to update' }, { status: 400 });
+    }
+
     const [updatedSite] = await db
       .update(sites)
-      .set({
-        businessType,
-        description,
-        targetAudience,
-        primaryGoals,
-        pageContext: pageContext ? JSON.stringify(pageContext) : null
-      })
+      .set(updates)
       .where(and(eq(sites.id, siteId), eq(sites.userId, session.user.id)))
       .returning();
 
