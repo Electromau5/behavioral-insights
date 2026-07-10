@@ -304,17 +304,7 @@ export default function FlowsPage() {
 
   const requestScreenshot = async (event: FlowEvent) => {
     if (!selectedSite || !flowDetail) return;
-
     setScreenshotStatus(prev => ({ ...prev, [event.id]: 'loading' }));
-
-    // For now, we'll show an info message since screenshots need to be captured
-    // from the actual user's browser session. In a real implementation, this would
-    // either use a replay system or require the session to still be active.
-
-    // Since this is historical data, we can't capture screenshots retroactively.
-    // The screenshot feature works for live sessions where the tracker can capture.
-
-    // For demo purposes, let's show the limitation
     setTimeout(() => {
       setScreenshotStatus(prev => ({ ...prev, [event.id]: 'error' }));
     }, 1000);
@@ -398,8 +388,10 @@ export default function FlowsPage() {
           </div>
         </div>
 
-        <div className="grid lg:grid-cols-3 gap-6">
-          {/* Flows List */}
+        {/* Three-panel layout: session list | tab content | metadata sidebar */}
+        <div className="grid lg:grid-cols-4 gap-6 items-start">
+
+          {/* Panel 1 — Session List */}
           <div className="lg:col-span-1">
             <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
               <div className="p-4 border-b border-slate-200">
@@ -476,59 +468,11 @@ export default function FlowsPage() {
             </div>
           </div>
 
-          {/* Flow Detail */}
+          {/* Panel 2 — Tab Content */}
           <div className="lg:col-span-2">
             {selectedFlow && flowDetail ? (
               <div className="bg-white rounded-xl border border-slate-200">
-                <div className="p-6 border-b border-slate-200">
-                  <div className="flex justify-between items-start mb-4">
-                    <div>
-                      <h2 className="text-lg font-semibold text-slate-900">Session Analysis</h2>
-                      <p className="text-sm text-slate-500">
-                        {formatTime(selectedFlow.startedAt)} • {formatDuration(selectedFlow.duration)}
-                      </p>
-                      {(selectedFlow.city || selectedFlow.region || selectedFlow.country) && (
-                        <p className="text-sm text-slate-500 flex items-center gap-1 mt-1">
-                          <span>📍</span>
-                          {[selectedFlow.city, selectedFlow.region, selectedFlow.country].filter(Boolean).join(', ')}
-                        </p>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-2xl">{getDeviceIcon(selectedFlow.deviceType)}</span>
-                      {!flowDetail.analysis && (
-                        <button
-                          onClick={() => fetchFlowDetail(selectedFlow.sessionId, true)}
-                          disabled={analyzing}
-                          className="px-3 py-1.5 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 disabled:opacity-50"
-                        >
-                          {analyzing ? 'Analyzing...' : '🧠 Analyze Behavior'}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-4 gap-4">
-                    <div className="bg-slate-50 rounded-lg p-3 text-center">
-                      <p className="text-2xl font-bold text-slate-900">{flowDetail.summary.pageViews}</p>
-                      <p className="text-xs text-slate-500">Pages</p>
-                    </div>
-                    <div className="bg-slate-50 rounded-lg p-3 text-center">
-                      <p className="text-2xl font-bold text-slate-900">{flowDetail.summary.clicks}</p>
-                      <p className="text-xs text-slate-500">Clicks</p>
-                    </div>
-                    <div className="bg-slate-50 rounded-lg p-3 text-center">
-                      <p className="text-2xl font-bold text-slate-900">{flowDetail.summary.totalEvents}</p>
-                      <p className="text-xs text-slate-500">Events</p>
-                    </div>
-                    <div className="bg-slate-50 rounded-lg p-3 text-center">
-                      <p className="text-2xl font-bold text-slate-900">{flowDetail.summary.backtracks.length}</p>
-                      <p className="text-xs text-slate-500">Backtracks</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Tabs */}
+                {/* Tab bar */}
                 <div className="border-b border-slate-200">
                   <div className="flex">
                     <button
@@ -564,7 +508,8 @@ export default function FlowsPage() {
                   </div>
                 </div>
 
-                <div className="p-6 max-h-[calc(100vh-400px)] overflow-y-auto">
+                {/* Tab content */}
+                <div className="p-6 max-h-[calc(100vh-280px)] overflow-y-auto">
                   {activeTab === 'analysis' ? (
                     flowDetail.analysis && flowDetail.analysis.source === 'ai' ? (
                       <div className="space-y-6">
@@ -702,8 +647,8 @@ export default function FlowsPage() {
                                         <span className="text-slate-900 font-medium">{formatDuration(time)}</span>
                                       </div>
                                       <div className="h-2 bg-slate-100 rounded-full">
-                                        <div 
-                                          className="h-full bg-indigo-500 rounded-full" 
+                                        <div
+                                          className="h-full bg-indigo-500 rounded-full"
                                           style={{ width: `${percentage}%` }}
                                         />
                                       </div>
@@ -757,7 +702,6 @@ export default function FlowsPage() {
                                   {getEventLabel(event.type)}
                                 </span>
                                 <div className="flex items-center gap-2">
-                                  {/* Screenshot button/status */}
                                   {event.screenshotId ? (
                                     <button
                                       onClick={() => fetchScreenshot(event.screenshotId!)}
@@ -805,6 +749,63 @@ export default function FlowsPage() {
               </div>
             )}
           </div>
+
+          {/* Panel 3 — Session Metadata Sidebar */}
+          <div className="lg:col-span-1">
+            {selectedFlow && flowDetail ? (
+              <div className="space-y-4">
+                {/* Session info */}
+                <div className="bg-white rounded-xl border border-slate-200 p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-2xl">{getDeviceIcon(selectedFlow.deviceType)}</span>
+                    {!flowDetail.analysis && (
+                      <button
+                        onClick={() => fetchFlowDetail(selectedFlow.sessionId, true)}
+                        disabled={analyzing}
+                        className="px-3 py-1.5 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+                      >
+                        {analyzing ? 'Analyzing...' : '🧠 Analyze'}
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-sm font-medium text-slate-900">{formatTime(selectedFlow.startedAt)}</p>
+                  <p className="text-sm text-slate-500 mt-0.5">{formatDuration(selectedFlow.duration)}</p>
+                  {(selectedFlow.city || selectedFlow.region || selectedFlow.country) && (
+                    <p className="text-sm text-slate-500 flex items-center gap-1 mt-2">
+                      <span>📍</span>
+                      <span>{[selectedFlow.city, selectedFlow.region, selectedFlow.country].filter(Boolean).join(', ')}</span>
+                    </p>
+                  )}
+                  {selectedFlow.referrer && (
+                    <p className="text-xs text-slate-400 mt-2 truncate" title={selectedFlow.referrer}>
+                      From: {selectedFlow.referrer}
+                    </p>
+                  )}
+                </div>
+
+                {/* Metric cards */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="bg-white rounded-xl border border-slate-200 p-3 text-center">
+                    <p className="text-2xl font-bold text-slate-900">{flowDetail.summary.pageViews}</p>
+                    <p className="text-xs text-slate-500">Pages</p>
+                  </div>
+                  <div className="bg-white rounded-xl border border-slate-200 p-3 text-center">
+                    <p className="text-2xl font-bold text-slate-900">{flowDetail.summary.clicks}</p>
+                    <p className="text-xs text-slate-500">Clicks</p>
+                  </div>
+                  <div className="bg-white rounded-xl border border-slate-200 p-3 text-center">
+                    <p className="text-2xl font-bold text-slate-900">{flowDetail.summary.totalEvents}</p>
+                    <p className="text-xs text-slate-500">Events</p>
+                  </div>
+                  <div className="bg-white rounded-xl border border-slate-200 p-3 text-center">
+                    <p className="text-2xl font-bold text-slate-900">{flowDetail.summary.backtracks.length}</p>
+                    <p className="text-xs text-slate-500">Backtracks</p>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </div>
+
         </div>
       </main>
 
