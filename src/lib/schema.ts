@@ -123,6 +123,15 @@ export const journeyMaps = pgTable('journey_maps', {
   generatedAt: timestamp('generated_at').defaultNow().notNull(),
 });
 
+// AI-generated user personas from analytics data
+export const personas = pgTable('personas', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  siteId: uuid('site_id').references(() => sites.id).notNull(),
+  period: text('period').notNull(),
+  data: jsonb('data').notNull(), // array of persona objects
+  generatedAt: timestamp('generated_at').defaultNow().notNull(),
+});
+
 // Password reset tokens for forgot password flow
 export const passwordResetTokens = pgTable('password_reset_tokens', {
   id: uuid('id').primaryKey().defaultRandom(),
