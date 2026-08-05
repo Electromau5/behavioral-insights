@@ -277,6 +277,7 @@ export default function PatternsPage() {
               <Link href="/dashboard" className="text-slate-600 hover:text-slate-900 font-medium text-sm">Dashboard</Link>
               <Link href="/flows" className="text-slate-600 hover:text-slate-900 font-medium text-sm">User Flows</Link>
               <Link href="/friction" className="text-indigo-600 font-medium text-sm">Patterns</Link>
+              <Link href="/journey" className="text-slate-600 hover:text-slate-900 font-medium text-sm">Journey Map</Link>
             </div>
           </div>
         </div>

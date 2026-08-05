@@ -113,6 +113,16 @@ export const screenshots = pgTable('screenshots', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
+// Customer journey maps (AI-generated from analytics data)
+export const journeyMaps = pgTable('journey_maps', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  siteId: uuid('site_id').references(() => sites.id).notNull(),
+  period: text('period').notNull(),
+  stages: jsonb('stages').notNull(),
+  summary: jsonb('summary'),
+  generatedAt: timestamp('generated_at').defaultNow().notNull(),
+});
+
 // Password reset tokens for forgot password flow
 export const passwordResetTokens = pgTable('password_reset_tokens', {
   id: uuid('id').primaryKey().defaultRandom(),

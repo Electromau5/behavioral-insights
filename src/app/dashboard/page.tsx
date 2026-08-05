@@ -439,6 +439,7 @@ export default function Dashboard() {
               <Link href="/dashboard" className="text-indigo-600 font-medium text-sm">Dashboard</Link>
               <Link href="/flows" className="text-slate-600 hover:text-slate-900 font-medium text-sm">User Flows</Link>
               <Link href="/friction" className="text-slate-600 hover:text-slate-900 font-medium text-sm">Patterns</Link>
+              <Link href="/journey" className="text-slate-600 hover:text-slate-900 font-medium text-sm">Journey Map</Link>
               <button onClick={() => setShowAddSite(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
                 Add Site
               </button>
