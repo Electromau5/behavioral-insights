@@ -76,7 +76,7 @@ async function getMetrics(siteId: string, start: Date, end: Date) {
       bounceCount: sql<number>`COUNT(CASE WHEN ${sessions.isBounce} = true THEN 1 END)`,
     })
     .from(sessions)
-    .where(and(eq(sessions.siteId, siteId), gte(sessions.startedAt, start), lte(sessions.startedAt, end)));
+    .where(and(eq(sessions.siteId, siteId), eq(sessions.isExcluded, false), gte(sessions.startedAt, start), lte(sessions.startedAt, end)));
 
   return {
     sessions: Number(result.totalSessions),

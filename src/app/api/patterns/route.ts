@@ -92,6 +92,7 @@ async function getSessionMetrics(siteId: string, start: Date, end: Date) {
     .from(sessions)
     .where(and(
       eq(sessions.siteId, siteId),
+      eq(sessions.isExcluded, false),
       gte(sessions.startedAt, start),
       lte(sessions.startedAt, end)
     ));
@@ -119,6 +120,7 @@ async function getEngagementPatterns(siteId: string, start: Date, end: Date) {
     .from(sessions)
     .where(and(
       eq(sessions.siteId, siteId),
+      eq(sessions.isExcluded, false),
       gte(sessions.startedAt, start),
       lte(sessions.startedAt, end)
     ));
@@ -146,6 +148,7 @@ async function getEngagementPatterns(siteId: string, start: Date, end: Date) {
     .from(sessions)
     .where(and(
       eq(sessions.siteId, siteId),
+      eq(sessions.isExcluded, false),
       gte(sessions.startedAt, start),
       lte(sessions.startedAt, end)
     ));
@@ -176,6 +179,7 @@ async function getEngagementPatterns(siteId: string, start: Date, end: Date) {
     .from(events)
     .where(and(
       eq(events.siteId, siteId),
+      eq(events.isExcluded, false),
       gte(events.timestamp, start),
       lte(events.timestamp, end)
     ))
@@ -204,6 +208,7 @@ async function getNavigationPatterns(siteId: string, start: Date, end: Date) {
     .from(sessions)
     .where(and(
       eq(sessions.siteId, siteId),
+      eq(sessions.isExcluded, false),
       gte(sessions.startedAt, start),
       lte(sessions.startedAt, end)
     ))
@@ -220,6 +225,7 @@ async function getNavigationPatterns(siteId: string, start: Date, end: Date) {
     .from(sessions)
     .where(and(
       eq(sessions.siteId, siteId),
+      eq(sessions.isExcluded, false),
       gte(sessions.startedAt, start),
       lte(sessions.startedAt, end)
     ))
@@ -256,6 +262,7 @@ async function getFrictionPatterns(siteId: string, start: Date, end: Date) {
     .from(events)
     .where(and(
       eq(events.siteId, siteId),
+      eq(events.isExcluded, false),
       gte(events.timestamp, start),
       lte(events.timestamp, end),
       sql`${events.eventType} IN ('rage_click', 'dead_click', 'mouse_thrash', 'form_abandonment', 'form_field_skip', 'exit_intent')`
@@ -280,6 +287,7 @@ async function getFrictionPatterns(siteId: string, start: Date, end: Date) {
     .from(sessions)
     .where(and(
       eq(sessions.siteId, siteId),
+      eq(sessions.isExcluded, false),
       gte(sessions.startedAt, start),
       lte(sessions.startedAt, end)
     ));
@@ -324,6 +332,7 @@ async function getDevicePatterns(siteId: string, start: Date, end: Date) {
     .from(sessions)
     .where(and(
       eq(sessions.siteId, siteId),
+      eq(sessions.isExcluded, false),
       gte(sessions.startedAt, start),
       lte(sessions.startedAt, end)
     ))

@@ -32,13 +32,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid site ID' }, { status: 403, headers: corsHeaders });
     }
 
-    // Drop events from excluded IPs; respond with success so the tracker doesn't retry
-    if (site.ipExclusionEnabled) {
-      const clientIP = getClientIP(request);
-      if (clientIP && isIpExcluded(clientIP, site.excludedIps)) {
-        return NextResponse.json({ success: true, excluded: true }, { status: 200, headers: corsHeaders });
-      }
-    }
+    // Tag (not drop) traffic from excluded IPs so it can be shown/hidden in the dashboard
+    const clientIP = getClientIP(request);
+    const isExcluded = Boolean(
+      site.ipExclusionEnabled && clientIP && isIpExcluded(clientIP, site.excludedIps)
+    );
 
     await db.insert(events).values({
       siteId, sessionId, visitorId, eventType,
@@ -46,13 +44,13 @@ export async function POST(request: NextRequest) {
       url, path, referrer, userAgent, deviceType,
       screenWidth, screenHeight, viewportWidth, viewportHeight,
       language, timezone, eventData: eventData || {},
+      isExcluded,
     });
 
     const existingSession = await db.query.sessions.findFirst({ where: eq(sessions.id, sessionId) });
 
     if (!existingSession) {
       // Get geolocation for new sessions
-      const clientIP = getClientIP(request);
       const geo = clientIP ? await getGeoLocation(clientIP) : { country: null, region: null, city: null };
 
       await db.insert(sessions).values({
@@ -66,6 +64,7 @@ export async function POST(request: NextRequest) {
         country: geo.country,
         region: geo.region,
         city: geo.city,
+        isExcluded,
       });
     } else {
       const updates: Record<string, unknown> = {

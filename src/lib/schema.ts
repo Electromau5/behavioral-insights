@@ -28,6 +28,9 @@ export const sites = pgTable('sites', {
   // IP-based tracking exclusion
   ipExclusionEnabled: boolean('ip_exclusion_enabled').default(false).notNull(),
   excludedIps: jsonb('excluded_ips'), // Array of IPs or CIDR ranges, e.g. ["1.2.3.4", "10.0.0.0/8"]
+  // Site profile / onboarding
+  siteCategory: text('site_category'), // 'business' | 'consumer'
+  relevantMetrics: jsonb('relevant_metrics'), // string[] of metric keys
 });
 
 export const events = pgTable('events', {
@@ -49,6 +52,7 @@ export const events = pgTable('events', {
   language: text('language'),
   timezone: text('timezone'),
   eventData: jsonb('event_data'),
+  isExcluded: boolean('is_excluded').default(false).notNull(), // From an excluded IP; hidden from analytics by default
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
@@ -71,6 +75,7 @@ export const sessions = pgTable('sessions', {
   country: text('country'),
   region: text('region'), // State/province
   city: text('city'),
+  isExcluded: boolean('is_excluded').default(false).notNull(), // From an excluded IP; hidden from analytics by default
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 

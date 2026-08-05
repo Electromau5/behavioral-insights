@@ -8,6 +8,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const siteId = searchParams.get('siteId');
     const period = searchParams.get('period') || '7d';
+    const includeExcluded = searchParams.get('includeExcluded') === 'true';
 
     if (!siteId) {
       return NextResponse.json({ error: 'Site ID is required' }, { status: 400 });
@@ -16,6 +17,13 @@ export async function GET(request: NextRequest) {
     const now = new Date();
     const days = period === '30d' ? 30 : period === '90d' ? 90 : 7;
     const start = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+
+    const range = and(
+      eq(sessions.siteId, siteId),
+      gte(sessions.startedAt, start),
+      lte(sessions.startedAt, now),
+      ...(includeExcluded ? [] : [eq(sessions.isExcluded, false)])
+    );
 
     const [overview] = await db
       .select({
@@ -27,14 +35,14 @@ export async function GET(request: NextRequest) {
         bounceCount: sql<number>`COUNT(CASE WHEN ${sessions.isBounce} = true THEN 1 END)`,
       })
       .from(sessions)
-      .where(and(eq(sessions.siteId, siteId), gte(sessions.startedAt, start), lte(sessions.startedAt, now)));
+      .where(range);
 
     const bounceRate = overview.totalSessions > 0 ? (overview.bounceCount / overview.totalSessions) * 100 : 0;
 
     const topPages = await db
       .select({ path: sessions.entryPage, views: count(sessions.id), avgDuration: avg(sessions.duration) })
       .from(sessions)
-      .where(and(eq(sessions.siteId, siteId), gte(sessions.startedAt, start), lte(sessions.startedAt, now)))
+      .where(range)
       .groupBy(sessions.entryPage)
       .orderBy(sql`count(*) DESC`)
       .limit(10);
@@ -42,7 +50,7 @@ export async function GET(request: NextRequest) {
     const deviceBreakdown = await db
       .select({ device: sessions.deviceType, count: count(sessions.id) })
       .from(sessions)
-      .where(and(eq(sessions.siteId, siteId), gte(sessions.startedAt, start), lte(sessions.startedAt, now)))
+      .where(range)
       .groupBy(sessions.deviceType);
 
     return NextResponse.json({

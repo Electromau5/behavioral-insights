@@ -10,6 +10,11 @@ interface Site {
   domain: string;
   ipExclusionEnabled?: boolean;
   excludedIps?: string[] | null;
+  siteCategory?: string | null;
+  businessType?: string | null;
+  targetAudience?: string | null;
+  description?: string | null;
+  relevantMetrics?: string[] | null;
 }
 
 interface Insight {
@@ -33,6 +38,40 @@ interface Metrics {
   topPages: Array<{ path: string; views: number }>;
   deviceBreakdown: Array<{ device: string; count: number }>;
 }
+
+const BUSINESS_TYPES: Record<string, string[]> = {
+  business: [
+    'E-commerce / Online Store',
+    'SaaS / Software App',
+    'Service Business',
+    'Agency / Freelance',
+    'Media / Blog / Publication',
+    'Marketplace',
+    'Non-profit',
+  ],
+  consumer: [
+    'Designer Portfolio',
+    'Developer Portfolio',
+    'Creative Portfolio',
+    'Personal Blog',
+    'Personal Brand',
+    'Event / Wedding Site',
+    'Resume / CV',
+  ],
+};
+
+const METRIC_OPTIONS = [
+  { id: 'bounce_rate', label: 'Bounce Rate', desc: 'How many visitors leave after one page' },
+  { id: 'session_duration', label: 'Session Duration', desc: 'How long visitors stay on average' },
+  { id: 'page_views', label: 'Page Views', desc: 'Total pages viewed per session' },
+  { id: 'scroll_depth', label: 'Scroll Depth', desc: 'How far visitors scroll down pages' },
+  { id: 'top_pages', label: 'Top Pages', desc: 'Which pages get the most traffic' },
+  { id: 'device_breakdown', label: 'Device Breakdown', desc: 'Mobile vs desktop usage' },
+  { id: 'user_flows', label: 'User Flows', desc: 'Paths visitors take through your site' },
+  { id: 'friction_points', label: 'Friction Points', desc: 'Where visitors get stuck or drop off' },
+  { id: 'geographic', label: 'Geographic Distribution', desc: 'Where visitors come from' },
+  { id: 'entry_exit', label: 'Entry & Exit Pages', desc: 'Where visitors start and leave' },
+];
 
 export default function Dashboard() {
   const { data: session } = useSession();
@@ -58,15 +97,25 @@ export default function Dashboard() {
   const [ipError, setIpError] = useState('');
   const [myIp, setMyIp] = useState<string | null>(null);
   const [savingIps, setSavingIps] = useState(false);
+  const [showExcluded, setShowExcluded] = useState(false);
+
+  // Site profile modal
+  const [showSiteProfile, setShowSiteProfile] = useState(false);
+  const [profileStep, setProfileStep] = useState(1);
+  const [profileCategory, setProfileCategory] = useState('');
+  const [profileSiteType, setProfileSiteType] = useState('');
+  const [profileTargetAudience, setProfileTargetAudience] = useState('');
+  const [profileMetrics, setProfileMetrics] = useState<string[]>([]);
+  const [savingProfile, setSavingProfile] = useState(false);
 
   useEffect(() => { fetchSites(); }, []);
-  
+
   useEffect(() => {
     if (selectedSite) {
       fetchMetrics(selectedSite);
       fetchInsights(selectedSite);
     }
-  }, [selectedSite, period]);
+  }, [selectedSite, period, showExcluded]);
 
   const fetchSites = async () => {
     try {
@@ -80,7 +129,7 @@ export default function Dashboard() {
 
   const fetchMetrics = async (siteId: string) => {
     try {
-      const res = await fetch(`/api/metrics?siteId=${siteId}&period=${period}`);
+      const res = await fetch(`/api/metrics?siteId=${siteId}&period=${period}&includeExcluded=${showExcluded}`);
       setMetrics(await res.json());
     } catch (e) { console.error(e); }
   };
@@ -157,7 +206,6 @@ export default function Dashboard() {
   const addIp = (ip: string) => {
     const value = ip.trim();
     if (!value) return;
-    // Exact IPv4/IPv6 or IPv4 CIDR like 203.0.113.0/24
     const isValid = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/.test(value) || /^[0-9a-fA-F:]+$/.test(value) && value.includes(':');
     if (!isValid) {
       setIpError('Enter a valid IP address (e.g. 203.0.113.7) or CIDR range (e.g. 203.0.113.0/24)');
@@ -196,13 +244,60 @@ export default function Dashboard() {
     setSavingIps(false);
   };
 
+  const openSiteProfile = () => {
+    const site = sites.find(s => s.id === selectedSite);
+    setProfileCategory(site?.siteCategory || '');
+    setProfileSiteType(site?.businessType || '');
+    setProfileTargetAudience(site?.targetAudience || '');
+    setProfileMetrics(site?.relevantMetrics || []);
+    setProfileStep(1);
+    setShowSiteProfile(true);
+  };
+
+  const saveSiteProfile = async () => {
+    if (!selectedSite) return;
+    setSavingProfile(true);
+    try {
+      const res = await fetch('/api/sites', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          siteId: selectedSite,
+          siteCategory: profileCategory,
+          businessType: profileSiteType,
+          targetAudience: profileTargetAudience,
+          relevantMetrics: profileMetrics,
+        })
+      });
+      if (res.ok) {
+        setSites(sites.map(s => s.id === selectedSite ? {
+          ...s,
+          siteCategory: profileCategory,
+          businessType: profileSiteType,
+          targetAudience: profileTargetAudience,
+          relevantMetrics: profileMetrics,
+        } : s));
+        setShowSiteProfile(false);
+      }
+    } catch (e) { console.error(e); }
+    setSavingProfile(false);
+  };
+
+  const toggleMetric = (id: string) => {
+    setProfileMetrics(prev =>
+      prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id]
+    );
+  };
+
   const currentSite = sites.find(s => s.id === selectedSite);
+  const siteProfileComplete = !!(currentSite?.siteCategory && currentSite?.businessType && currentSite?.targetAudience);
+
   const currentTrackingCode = selectedSite
     ? `<script src="https://behavioral-insights.vercel.app/tracker.js" data-site-id="${selectedSite}"></script>`
     : '';
 
   const formatDuration = (s: number) => s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
-  
+
   const getSeverityColor = (severity: string) => {
     if (severity === 'critical') return 'bg-red-100 text-red-800 border-red-200';
     if (severity === 'warning') return 'bg-amber-100 text-amber-800 border-amber-200';
@@ -242,6 +337,21 @@ export default function Dashboard() {
                       <option key={site.id} value={site.id}>{site.name}</option>
                     ))}
                   </select>
+                  {/* Site profile */}
+                  <button
+                    onClick={openSiteProfile}
+                    title="Site profile"
+                    className={`p-1.5 rounded-lg border ${
+                      siteProfileComplete
+                        ? 'text-indigo-600 bg-indigo-50 border-indigo-300'
+                        : 'text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 border-slate-300 hover:border-indigo-300'
+                    }`}
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                  </button>
+                  {/* Tracking code */}
                   <button
                     onClick={() => setShowTrackingCode(true)}
                     title="View tracking code"
@@ -251,6 +361,7 @@ export default function Dashboard() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
                     </svg>
                   </button>
+                  {/* IP exclusions */}
                   <button
                     onClick={openIpExclusions}
                     title="IP exclusions"
@@ -264,6 +375,7 @@ export default function Dashboard() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
                     </svg>
                   </button>
+                  {/* Delete */}
                   <button
                     onClick={() => setShowDeleteConfirm(true)}
                     title="Remove site"
@@ -283,10 +395,9 @@ export default function Dashboard() {
               <button onClick={() => setShowAddSite(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
                 Add Site
               </button>
-              
-              {/* User Menu */}
+
               <div className="relative">
-                <button 
+                <button
                   onClick={() => setShowUserMenu(!showUserMenu)}
                   className="flex items-center gap-2 text-sm text-slate-700 hover:text-slate-900"
                 >
@@ -299,7 +410,7 @@ export default function Dashboard() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                   </svg>
                 </button>
-                
+
                 {showUserMenu && (
                   <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-slate-200 py-1 z-50">
                     <div className="px-4 py-2 border-b border-slate-100">
@@ -307,7 +418,7 @@ export default function Dashboard() {
                       <p className="text-xs text-slate-500 truncate">{session?.user?.email}</p>
                     </div>
                     <Link href="/settings" className="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Settings</Link>
-                    <button 
+                    <button
                       onClick={() => signOut({ callbackUrl: '/login' })}
                       className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
                     >
@@ -335,6 +446,22 @@ export default function Dashboard() {
           </div>
         ) : (
           <>
+            {/* Site profile prompt when incomplete */}
+            {!siteProfileComplete && (
+              <div className="mb-6 bg-indigo-50 border border-indigo-200 rounded-xl px-5 py-4 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-indigo-900">Set up your site profile</p>
+                  <p className="text-sm text-indigo-700 mt-0.5">Tell us about this site so AI insights are more relevant to your goals.</p>
+                </div>
+                <button
+                  onClick={openSiteProfile}
+                  className="ml-4 shrink-0 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
+                >
+                  Set up profile
+                </button>
+              </div>
+            )}
+
             <div className="flex justify-between items-center mb-6">
               <div className="flex gap-2">
                 {['7d', '30d', '90d'].map((p) => (
@@ -348,6 +475,17 @@ export default function Dashboard() {
                     {p === '7d' ? 'Last 7 days' : p === '30d' ? 'Last 30 days' : 'Last 90 days'}
                   </button>
                 ))}
+                {currentSite?.ipExclusionEnabled && (
+                  <label className="flex items-center gap-2 ml-2 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm font-medium text-slate-600 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={showExcluded}
+                      onChange={(e) => setShowExcluded(e.target.checked)}
+                      className="accent-indigo-600"
+                    />
+                    Show excluded traffic
+                  </label>
+                )}
               </div>
               <div className="flex gap-2">
                 <Link href="/friction" className="flex items-center gap-2 bg-indigo-50 border border-indigo-200 text-indigo-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-100">
@@ -454,6 +592,209 @@ export default function Dashboard() {
         )}
       </main>
 
+      {/* ── Site Profile Modal ── */}
+      {showSiteProfile && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl w-full max-w-lg mx-4 overflow-hidden">
+            {/* Header */}
+            <div className="px-6 pt-6 pb-4 border-b border-slate-100">
+              <div className="flex justify-between items-start mb-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900">Site Profile</h2>
+                  <p className="text-sm text-slate-500 mt-0.5">{currentSite?.name}</p>
+                </div>
+                <button onClick={() => setShowSiteProfile(false)} className="text-slate-400 hover:text-slate-600">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              {/* Step indicator */}
+              <div className="flex gap-1.5">
+                {[1, 2, 3, 4].map((s) => (
+                  <div
+                    key={s}
+                    className={`h-1 flex-1 rounded-full transition-colors ${s <= profileStep ? 'bg-indigo-600' : 'bg-slate-200'}`}
+                  />
+                ))}
+              </div>
+              <p className="text-xs text-slate-400 mt-2">Step {profileStep} of 4</p>
+            </div>
+
+            {/* Step content */}
+            <div className="px-6 py-5">
+              {profileStep === 1 && (
+                <div>
+                  <p className="text-sm font-medium text-slate-900 mb-4">What kind of site is this?</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      {
+                        value: 'business',
+                        label: 'Business',
+                        desc: 'A company, product, or service',
+                        icon: (
+                          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-2 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                          </svg>
+                        ),
+                      },
+                      {
+                        value: 'consumer',
+                        label: 'Personal / Portfolio',
+                        desc: 'A portfolio, blog, or personal project',
+                        icon: (
+                          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                          </svg>
+                        ),
+                      },
+                    ].map((opt) => (
+                      <button
+                        key={opt.value}
+                        onClick={() => {
+                          setProfileCategory(opt.value);
+                          if (profileSiteType && !BUSINESS_TYPES[opt.value]?.includes(profileSiteType)) {
+                            setProfileSiteType('');
+                          }
+                        }}
+                        className={`flex flex-col items-start gap-2 p-4 rounded-xl border-2 text-left transition-colors ${
+                          profileCategory === opt.value
+                            ? 'border-indigo-600 bg-indigo-50'
+                            : 'border-slate-200 hover:border-slate-300'
+                        }`}
+                      >
+                        <span className={profileCategory === opt.value ? 'text-indigo-600' : 'text-slate-500'}>
+                          {opt.icon}
+                        </span>
+                        <div>
+                          <p className="text-sm font-medium text-slate-900">{opt.label}</p>
+                          <p className="text-xs text-slate-500 mt-0.5">{opt.desc}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {profileStep === 2 && (
+                <div>
+                  <p className="text-sm font-medium text-slate-900 mb-4">
+                    What type of {profileCategory === 'business' ? 'business' : 'site'} is it?
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(BUSINESS_TYPES[profileCategory] || []).map((type) => (
+                      <button
+                        key={type}
+                        onClick={() => setProfileSiteType(type)}
+                        className={`px-3 py-2.5 rounded-lg border text-sm text-left transition-colors ${
+                          profileSiteType === type
+                            ? 'border-indigo-600 bg-indigo-50 text-indigo-700 font-medium'
+                            : 'border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50'
+                        }`}
+                      >
+                        {type}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {profileStep === 3 && (
+                <div>
+                  <p className="text-sm font-medium text-slate-900 mb-1">Who is your target audience?</p>
+                  <p className="text-xs text-slate-500 mb-4">Describe who you&apos;re trying to reach — this helps AI insights stay relevant.</p>
+                  <textarea
+                    value={profileTargetAudience}
+                    onChange={(e) => setProfileTargetAudience(e.target.value)}
+                    rows={4}
+                    placeholder={
+                      profileCategory === 'consumer'
+                        ? 'e.g. Hiring managers and creative directors looking for a senior UX designer'
+                        : 'e.g. Small business owners aged 30–50 looking to automate invoicing'
+                    }
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  />
+                </div>
+              )}
+
+              {profileStep === 4 && (
+                <div>
+                  <p className="text-sm font-medium text-slate-900 mb-1">Which metrics matter most?</p>
+                  <p className="text-xs text-slate-500 mb-4">Select the ones most relevant to your goals. You can change these anytime.</p>
+                  <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                    {METRIC_OPTIONS.map((m) => (
+                      <button
+                        key={m.id}
+                        onClick={() => toggleMetric(m.id)}
+                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border text-left transition-colors ${
+                          profileMetrics.includes(m.id)
+                            ? 'border-indigo-600 bg-indigo-50'
+                            : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                        }`}
+                      >
+                        <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 ${
+                          profileMetrics.includes(m.id) ? 'border-indigo-600 bg-indigo-600' : 'border-slate-300'
+                        }`}>
+                          {profileMetrics.includes(m.id) && (
+                            <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                            </svg>
+                          )}
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-slate-900">{m.label}</p>
+                          <p className="text-xs text-slate-500">{m.desc}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer nav */}
+            <div className="px-6 pb-6 flex gap-3">
+              {profileStep > 1 ? (
+                <button
+                  onClick={() => setProfileStep(profileStep - 1)}
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 rounded-lg font-medium text-sm"
+                >
+                  Back
+                </button>
+              ) : (
+                <button
+                  onClick={() => setShowSiteProfile(false)}
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 rounded-lg font-medium text-sm"
+                >
+                  Cancel
+                </button>
+              )}
+              {profileStep < 4 ? (
+                <button
+                  onClick={() => setProfileStep(profileStep + 1)}
+                  disabled={
+                    (profileStep === 1 && !profileCategory) ||
+                    (profileStep === 2 && !profileSiteType)
+                  }
+                  className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white py-2 rounded-lg font-medium text-sm"
+                >
+                  Next
+                </button>
+              ) : (
+                <button
+                  onClick={saveSiteProfile}
+                  disabled={savingProfile}
+                  className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white py-2 rounded-lg font-medium text-sm"
+                >
+                  {savingProfile ? 'Saving...' : 'Save profile'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Tracking Code Modal ── */}
       {showTrackingCode && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 w-full max-w-md mx-4">
@@ -486,6 +827,7 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* ── IP Exclusions Modal ── */}
       {showIpExclusions && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 w-full max-w-md mx-4">
@@ -498,13 +840,13 @@ export default function Dashboard() {
               </button>
             </div>
             <p className="text-sm text-slate-600 mb-4">
-              Visits from these IP addresses won&apos;t be tracked for <span className="font-medium text-slate-900">{currentSite?.name}</span>. Useful for filtering out your own visits.
+              Visits from these IP addresses are tagged as excluded for <span className="font-medium text-slate-900">{currentSite?.name}</span> and hidden from analytics. Use &quot;Show excluded traffic&quot; on the dashboard to reveal them anytime.
             </p>
 
             <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 mb-4">
               <div>
                 <p className="text-sm font-medium text-slate-900">Exclude listed IPs</p>
-                <p className="text-xs text-slate-500">{ipExclusionEnabled ? 'On — matching visits are ignored' : 'Off — all visits are tracked'}</p>
+                <p className="text-xs text-slate-500">{ipExclusionEnabled ? 'On — matching visits are tagged and hidden' : 'Off — all visits are tracked normally'}</p>
               </div>
               <button
                 onClick={() => setIpExclusionEnabled(!ipExclusionEnabled)}
@@ -578,6 +920,7 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* ── Delete Confirm Modal ── */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 w-full max-w-sm mx-4">
@@ -610,6 +953,7 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* ── Add Site Modal ── */}
       {showAddSite && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 w-full max-w-md mx-4">
@@ -623,8 +967,21 @@ export default function Dashboard() {
                 <button onClick={() => navigator.clipboard.writeText(trackingCode)} className="w-full bg-slate-100 text-slate-700 py-2 rounded-lg font-medium mb-2">
                   Copy
                 </button>
-                <button onClick={() => { setShowAddSite(false); setTrackingCode(''); }} className="w-full bg-indigo-600 text-white py-2 rounded-lg font-medium">
-                  Done
+                <button
+                  onClick={() => {
+                    setShowAddSite(false);
+                    setTrackingCode('');
+                    openSiteProfile();
+                  }}
+                  className="w-full bg-indigo-600 text-white py-2 rounded-lg font-medium mb-2"
+                >
+                  Set up site profile
+                </button>
+                <button
+                  onClick={() => { setShowAddSite(false); setTrackingCode(''); }}
+                  className="w-full text-sm text-slate-500 hover:text-slate-700 py-1"
+                >
+                  Skip for now
                 </button>
               </div>
             ) : (

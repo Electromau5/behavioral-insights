@@ -80,6 +80,7 @@ export async function GET(request: NextRequest) {
       .from(events)
       .where(and(
         eq(events.siteId, siteId),
+        eq(events.isExcluded, false),
         gte(events.timestamp, start),
         lte(events.timestamp, now),
         sql`${events.eventType} IN ('rage_click', 'dead_click', 'mouse_thrash', 'form_abandonment', 'form_field_skip', 'form_start', 'exit_intent')`
@@ -92,6 +93,7 @@ export async function GET(request: NextRequest) {
       .from(events)
       .where(and(
         eq(events.siteId, siteId),
+        eq(events.isExcluded, false),
         gte(events.timestamp, start),
         lte(events.timestamp, now)
       ));

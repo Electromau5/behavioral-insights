@@ -441,6 +441,7 @@ export async function GET(request: NextRequest) {
       .from(sessions)
       .where(and(
         eq(sessions.siteId, siteId),
+        eq(sessions.isExcluded, false),
         gte(sessions.startedAt, start),
         lte(sessions.startedAt, now)
       ))
@@ -454,6 +455,7 @@ export async function GET(request: NextRequest) {
       .from(sessions)
       .where(and(
         eq(sessions.siteId, siteId),
+        eq(sessions.isExcluded, false),
         gte(sessions.startedAt, start),
         lte(sessions.startedAt, now)
       ));

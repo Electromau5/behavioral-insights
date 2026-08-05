@@ -82,6 +82,8 @@ export async function PUT(request: NextRequest) {
     if ('targetAudience' in body) updates.targetAudience = body.targetAudience;
     if ('primaryGoals' in body) updates.primaryGoals = body.primaryGoals;
     if ('pageContext' in body) updates.pageContext = body.pageContext ? JSON.stringify(body.pageContext) : null;
+    if ('siteCategory' in body) updates.siteCategory = body.siteCategory || null;
+    if ('relevantMetrics' in body) updates.relevantMetrics = Array.isArray(body.relevantMetrics) ? body.relevantMetrics : null;
     if ('ipExclusionEnabled' in body) updates.ipExclusionEnabled = Boolean(body.ipExclusionEnabled);
     if ('excludedIps' in body) {
       const list = body.excludedIps;

@@ -45,12 +45,17 @@ const handler = createMcpHandler(
 
     server.tool(
       'get_metrics',
-      'Get overview metrics for a site: total sessions, unique visitors, page views, avg session duration (seconds), avg scroll depth, bounce rate, top pages, and device breakdown.',
-      { siteId: z.string().uuid(), period: periodSchema },
-      async ({ siteId, period }) => {
+      'Get overview metrics for a site: total sessions, unique visitors, page views, avg session duration (seconds), avg scroll depth, bounce rate, top pages, and device breakdown. Traffic from excluded IPs is omitted unless includeExcluded is true.',
+      { siteId: z.string().uuid(), period: periodSchema, includeExcluded: z.boolean().default(false) },
+      async ({ siteId, period, includeExcluded }) => {
         const now = new Date();
         const start = periodStart(period);
-        const range = and(eq(sessions.siteId, siteId), gte(sessions.startedAt, start), lte(sessions.startedAt, now));
+        const range = and(
+          eq(sessions.siteId, siteId),
+          gte(sessions.startedAt, start),
+          lte(sessions.startedAt, now),
+          ...(includeExcluded ? [] : [eq(sessions.isExcluded, false)])
+        );
 
         const [overview] = await db
           .select({
@@ -104,8 +109,9 @@ const handler = createMcpHandler(
         period: periodSchema,
         sortBy: z.enum(['recent', 'clicks', 'duration', 'pageViews']).default('recent'),
         limit: z.number().int().min(1).max(100).default(25),
+        includeExcluded: z.boolean().default(false),
       },
-      async ({ siteId, period, sortBy, limit }) => {
+      async ({ siteId, period, sortBy, limit, includeExcluded }) => {
         const orderCol =
           sortBy === 'clicks' ? desc(sessions.clicks)
           : sortBy === 'duration' ? desc(sessions.duration)
@@ -115,7 +121,11 @@ const handler = createMcpHandler(
         const rows = await db
           .select()
           .from(sessions)
-          .where(and(eq(sessions.siteId, siteId), gte(sessions.startedAt, periodStart(period))))
+          .where(and(
+            eq(sessions.siteId, siteId),
+            gte(sessions.startedAt, periodStart(period)),
+            ...(includeExcluded ? [] : [eq(sessions.isExcluded, false)])
+          ))
           .orderBy(orderCol)
           .limit(limit);
         return json(rows);
@@ -149,13 +159,14 @@ const handler = createMcpHandler(
     server.tool(
       'get_friction_summary',
       'Summarize UX friction for a site: rage clicks, dead clicks, mouse thrashes, form abandonments, field skips, and exit intents — totals and per-page breakdown.',
-      { siteId: z.string().uuid(), period: periodSchema },
-      async ({ siteId, period }) => {
+      { siteId: z.string().uuid(), period: periodSchema, includeExcluded: z.boolean().default(false) },
+      async ({ siteId, period, includeExcluded }) => {
         const frictionTypes = ['rage_click', 'dead_click', 'mouse_thrash', 'form_abandonment', 'form_field_skip', 'exit_intent'];
         const range = and(
           eq(events.siteId, siteId),
           gte(events.timestamp, periodStart(period)),
-          sql`${events.eventType} IN ('rage_click', 'dead_click', 'mouse_thrash', 'form_abandonment', 'form_field_skip', 'exit_intent')`
+          sql`${events.eventType} IN ('rage_click', 'dead_click', 'mouse_thrash', 'form_abandonment', 'form_field_skip', 'exit_intent')`,
+          ...(includeExcluded ? [] : [eq(events.isExcluded, false)])
         );
 
         const byType = await db
