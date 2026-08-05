@@ -285,7 +285,7 @@ function buildMarkdown(d: ReportData): string {
   const flags: string[] = [];
   if (ov.bounceRate > 70) flags.push(`**High bounce rate (${ov.bounceRate}%):** Most visitors leave without exploring beyond the first page.`);
   if (ov.avgScrollDepth < 30) flags.push(`**Low scroll depth (${ov.avgScrollDepth}%):** Visitors are not reading far into most pages — content or layout may not be pulling them down.`);
-  const contactFriction = d.frictionByPage.filter(r => r.path.includes('contact') && r.eventType === 'exit_intent').reduce((s, r) => s + Number(r.n), 0);
+  const contactFriction = d.frictionByPage.filter(r => r.path?.includes('contact') && r.eventType === 'exit_intent').reduce((s, r) => s + Number(r.n), 0);
   if (contactFriction > 5) flags.push(`**Contact page friction:** ${contactFriction} exit intent events on the contact page suggest motivated visitors are still abandoning before reaching out.`);
   if (!d.personaData) flags.push('**Personas not generated:** User personas have not been generated for this period. Generate them in the app for richer context.');
   if (!d.stages) flags.push('**Journey map not generated:** A customer journey map has not been generated for this period. Generate it in the app for stage-by-stage analysis.');
@@ -346,7 +346,7 @@ ${table(
 
 ${table(
     ['Page', 'Views'],
-    d.topPages.map(x => [x.path, x.views])
+    d.topPages.map(x => [x.path || '/', x.views])
   )}
 
 ### Entry Points
