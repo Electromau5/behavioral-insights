@@ -179,7 +179,7 @@ function buildPrompt(data: {
   devices: { device: string | null; n: number }[];
   countries: { country: string | null; n: number }[];
   referrers: { referrer: string | null; n: number }[];
-  entryPages: { page: string | null; n: number; avgDur: number | null }[];
+  entryPages: { page: string | null; n: number; avgDur: string | null }[];
   exitPages: { page: string | null; n: number }[];
   depthBuckets: { bucket: string; count: number; avg_seconds: number; avg_scroll: number }[];
   frictionByPage: { path: string; n: number }[];
