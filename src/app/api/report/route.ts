@@ -197,8 +197,10 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    const stack = error instanceof Error ? error.stack : undefined;
     console.error('Report error:', error);
-    return NextResponse.json({ error: 'Failed to generate report' }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to generate report', detail: msg, stack }, { status: 500 });
   }
 }
 
