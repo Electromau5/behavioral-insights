@@ -163,7 +163,7 @@ function EmotionCurve({ stages }: { stages: Stage[] }) {
 export default function JourneyPage() {
   const [sites, setSites] = useState<Site[]>([]);
   const [selectedSite, setSelectedSite] = useState<string | null>(null);
-  const [period, setPeriod] = useState('7d');
+  const [period, setPeriod] = useState('30d');
   const [journeyMap, setJourneyMap] = useState<JourneyMap | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
