@@ -99,6 +99,25 @@ export default function Dashboard() {
   const [savingIps, setSavingIps] = useState(false);
   const [showExcluded, setShowExcluded] = useState(false);
 
+  // Report download
+  const [downloadingReport, setDownloadingReport] = useState(false);
+
+  const downloadReport = async () => {
+    if (!selectedSite || downloadingReport) return;
+    setDownloadingReport(true);
+    try {
+      const res = await fetch(`/api/report?siteId=${selectedSite}&period=${period}`);
+      if (!res.ok) return;
+      const filename = res.headers.get('x-filename') || 'report.md';
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename; a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) { console.error(e); }
+    setDownloadingReport(false);
+  };
+
   // Export / import
   const [showDataModal, setShowDataModal] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -430,6 +449,17 @@ export default function Dashboard() {
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
+                  {/* Download report */}
+                  <button
+                    onClick={downloadReport}
+                    disabled={downloadingReport}
+                    title="Download site report (.md)"
+                    className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-300 hover:border-indigo-300 disabled:opacity-50"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3M3 17v2a2 2 0 002 2h14a2 2 0 002-2v-2" />
                     </svg>
                   </button>
                 </div>
