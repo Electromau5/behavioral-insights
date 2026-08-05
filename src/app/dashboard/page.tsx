@@ -99,6 +99,13 @@ export default function Dashboard() {
   const [savingIps, setSavingIps] = useState(false);
   const [showExcluded, setShowExcluded] = useState(false);
 
+  // Export / import
+  const [showDataModal, setShowDataModal] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{ sites: number; sessions: number; events: number } | null>(null);
+  const [importError, setImportError] = useState('');
+
   // Site profile modal
   const [showSiteProfile, setShowSiteProfile] = useState(false);
   const [profileStep, setProfileStep] = useState(1);
@@ -242,6 +249,46 @@ export default function Dashboard() {
       setIpError('Failed to save');
     }
     setSavingIps(false);
+  };
+
+  const exportData = async () => {
+    setExporting(true);
+    try {
+      const res = await fetch('/api/export');
+      if (!res.ok) throw new Error('Export failed');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `behavioral-insights-backup-${new Date().toISOString().split('T')[0]}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error(e);
+    }
+    setExporting(false);
+  };
+
+  const importData = async (file: File) => {
+    setImporting(true);
+    setImportError('');
+    setImportResult(null);
+    try {
+      const text = await file.text();
+      const backup = JSON.parse(text);
+      const res = await fetch('/api/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(backup),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Import failed');
+      setImportResult(data.imported);
+      fetchSites();
+    } catch (e) {
+      setImportError(e instanceof Error ? e.message : 'Import failed');
+    }
+    setImporting(false);
   };
 
   const openSiteProfile = () => {
@@ -419,6 +466,12 @@ export default function Dashboard() {
                     </div>
                     <Link href="/settings" className="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Settings</Link>
                     <button
+                      onClick={() => { setShowUserMenu(false); setShowDataModal(true); setImportResult(null); setImportError(''); }}
+                      className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                    >
+                      Export / Import data
+                    </button>
+                    <button
                       onClick={() => signOut({ callbackUrl: '/login' })}
                       className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
                     >
@@ -591,6 +644,75 @@ export default function Dashboard() {
           </>
         )}
       </main>
+
+      {/* ── Export / Import Modal ── */}
+      {showDataModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md mx-4">
+            <div className="flex justify-between items-center mb-5">
+              <h2 className="text-lg font-semibold text-slate-900">Export / Import data</h2>
+              <button onClick={() => setShowDataModal(false)} className="text-slate-400 hover:text-slate-600">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Export */}
+            <div className="border border-slate-200 rounded-xl p-4 mb-4">
+              <h3 className="text-sm font-medium text-slate-900 mb-1">Export</h3>
+              <p className="text-sm text-slate-500 mb-3">
+                Download all your sites, sessions, events, and insights as a JSON backup file.
+              </p>
+              <button
+                onClick={exportData}
+                disabled={exporting}
+                className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white py-2 rounded-lg text-sm font-medium"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                {exporting ? 'Exporting...' : 'Download backup'}
+              </button>
+            </div>
+
+            {/* Import */}
+            <div className="border border-slate-200 rounded-xl p-4">
+              <h3 className="text-sm font-medium text-slate-900 mb-1">Import</h3>
+              <p className="text-sm text-slate-500 mb-3">
+                Restore from a previously exported backup file. Existing records won&apos;t be overwritten — only missing data is added.
+              </p>
+
+              {importResult ? (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-sm text-green-800">
+                  <p className="font-medium mb-1">Import complete</p>
+                  <ul className="space-y-0.5 text-green-700">
+                    <li>{importResult.sites} site{importResult.sites !== 1 ? 's' : ''}</li>
+                    <li>{importResult.sessions} session{importResult.sessions !== 1 ? 's' : ''}</li>
+                    <li>{importResult.events} event{importResult.events !== 1 ? 's' : ''}</li>
+                  </ul>
+                </div>
+              ) : (
+                <>
+                  <label className={`w-full flex items-center justify-center gap-2 border-2 border-dashed border-slate-300 hover:border-indigo-400 rounded-lg py-4 text-sm text-slate-600 hover:text-indigo-600 cursor-pointer transition-colors ${importing ? 'opacity-50 pointer-events-none' : ''}`}>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l4-4m0 0l4 4m-4-4v12" />
+                    </svg>
+                    {importing ? 'Importing...' : 'Choose backup file (.json)'}
+                    <input
+                      type="file"
+                      accept=".json"
+                      className="hidden"
+                      onChange={(e) => { const f = e.target.files?.[0]; if (f) importData(f); }}
+                    />
+                  </label>
+                  {importError && <p className="text-xs text-red-600 mt-2">{importError}</p>}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Site Profile Modal ── */}
       {showSiteProfile && (
