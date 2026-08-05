@@ -137,18 +137,18 @@ export async function GET(request: NextRequest) {
       SELECT
         CASE
           WHEN page_views <= 1 THEN '1 page'
-          WHEN page_views BETWEEN 2 AND 4 THEN '2–4 pages'
+          WHEN page_views <= 4 THEN '2-4 pages'
           ELSE '5+ pages'
         END AS bucket,
         COUNT(*) AS n,
-        ROUND(AVG(duration) / 1000)::int AS avg_seconds
+        ROUND(COALESCE(AVG(duration), 0) / 1000) AS avg_seconds
       FROM sessions
       WHERE site_id = ${siteId}
         AND is_excluded = false
         AND started_at >= ${start}
         AND started_at <= ${now}
-      GROUP BY bucket
-      ORDER BY MIN(page_views)
+      GROUP BY 1
+      ORDER BY 1
     `) as unknown as { bucket: string; n: number; avg_seconds: number }[];
 
     const ov = overviewRows[0];
@@ -198,16 +198,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error('Report error:', error);
-    // Expose full error detail for debugging
-    const detail = {
-      message: error instanceof Error ? error.message : String(error),
-      cause: (error as any)?.cause ? String((error as any).cause) : undefined,
-      pgCode: (error as any)?.code,
-      pgDetail: (error as any)?.detail,
-      pgHint: (error as any)?.hint,
-      severity: (error as any)?.severity,
-    };
-    return NextResponse.json({ error: 'Failed to generate report', ...detail }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to generate report' }, { status: 500 });
   }
 }
 
