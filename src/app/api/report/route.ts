@@ -197,10 +197,17 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
-    const stack = error instanceof Error ? error.stack : undefined;
     console.error('Report error:', error);
-    return NextResponse.json({ error: 'Failed to generate report', detail: msg, stack }, { status: 500 });
+    // Expose full error detail for debugging
+    const detail = {
+      message: error instanceof Error ? error.message : String(error),
+      cause: (error as any)?.cause ? String((error as any).cause) : undefined,
+      pgCode: (error as any)?.code,
+      pgDetail: (error as any)?.detail,
+      pgHint: (error as any)?.hint,
+      severity: (error as any)?.severity,
+    };
+    return NextResponse.json({ error: 'Failed to generate report', ...detail }, { status: 500 });
   }
 }
 
