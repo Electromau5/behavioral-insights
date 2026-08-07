@@ -15,6 +15,25 @@ interface Site {
   targetAudience?: string | null;
   description?: string | null;
   relevantMetrics?: string[] | null;
+  ga4PropertyId?: string | null;
+}
+
+interface GA4Property {
+  id: string;
+  name: string;
+}
+
+interface GA4Data {
+  overview: {
+    sessions: number;
+    totalUsers: number;
+    newUsers: number;
+    conversions: number;
+    avgSessionDuration: number;
+    engagementRate: number;
+  };
+  trafficSources: Array<{ source: string; medium: string; sessions: number }>;
+  topPages: Array<{ pagePath: string; pageViews: number; avgEngagementTime: number; exitRate: number }>;
 }
 
 interface Insight {
@@ -82,6 +101,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [showAddSite, setShowAddSite] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [newSiteName, setNewSiteName] = useState('');
   const [newSiteDomain, setNewSiteDomain] = useState('');
   const [trackingCode, setTrackingCode] = useState('');
@@ -98,6 +118,17 @@ export default function Dashboard() {
   const [myIp, setMyIp] = useState<string | null>(null);
   const [savingIps, setSavingIps] = useState(false);
   const [showExcluded, setShowExcluded] = useState(false);
+
+  // GA4 integration
+  const [showGa4Modal, setShowGa4Modal] = useState(false);
+  const [ga4Connected, setGa4Connected] = useState(false);
+  const [ga4Properties, setGa4Properties] = useState<GA4Property[]>([]);
+  const [ga4Data, setGa4Data] = useState<GA4Data | null>(null);
+  const [ga4Loading, setGa4Loading] = useState(false);
+  const [ga4ModalLoading, setGa4ModalLoading] = useState(false);
+  const [ga4Error, setGa4Error] = useState('');
+  const [disconnecting, setDisconnecting] = useState(false);
+  const [savingGa4Property, setSavingGa4Property] = useState(false);
 
   // Report download
   const [downloadingReport, setDownloadingReport] = useState(false);
@@ -134,12 +165,23 @@ export default function Dashboard() {
   const [profileMetrics, setProfileMetrics] = useState<string[]>([]);
   const [savingProfile, setSavingProfile] = useState(false);
 
-  useEffect(() => { fetchSites(); }, []);
+  useEffect(() => {
+    fetchSites();
+    // If returning from Google OAuth, open the GA4 modal automatically
+    const params = new URLSearchParams(window.location.search);
+    const ga4Param = params.get('ga4');
+    if (ga4Param === 'connected' || ga4Param === 'error') {
+      window.history.replaceState({}, '', '/dashboard');
+      if (ga4Param === 'connected') setShowGa4Modal(true);
+      if (ga4Param === 'error') setGa4Error('Google authorization failed. Please try again.');
+    }
+  }, []);
 
   useEffect(() => {
     if (selectedSite) {
       fetchMetrics(selectedSite);
       fetchInsights(selectedSite);
+      fetchGa4Data(selectedSite);
     }
   }, [selectedSite, period, showExcluded]);
 
@@ -166,6 +208,69 @@ export default function Dashboard() {
       const data = await res.json();
       setInsights(data.insights || []);
     } catch (e) { console.error(e); }
+  };
+
+  const fetchGa4Data = async (siteId: string) => {
+    const site = sites.find(s => s.id === siteId);
+    if (!site?.ga4PropertyId) { setGa4Data(null); return; }
+    setGa4Loading(true);
+    try {
+      const res = await fetch(`/api/ga4/data?siteId=${siteId}&period=${period}`);
+      if (res.ok) setGa4Data(await res.json());
+      else setGa4Data(null);
+    } catch { setGa4Data(null); }
+    setGa4Loading(false);
+  };
+
+  const openGa4Modal = async () => {
+    setGa4Error('');
+    setGa4ModalLoading(true);
+    setShowGa4Modal(true);
+    try {
+      const [statusRes, propsRes] = await Promise.all([
+        fetch('/api/ga4/status'),
+        fetch('/api/ga4/properties'),
+      ]);
+      const status = await statusRes.json();
+      setGa4Connected(status.connected);
+      if (propsRes.ok) {
+        const propsData = await propsRes.json();
+        setGa4Properties(propsData.properties || []);
+      }
+    } catch { /* show modal in offline state */ }
+    setGa4ModalLoading(false);
+  };
+
+  const saveGa4Property = async (propertyId: string) => {
+    if (!selectedSite) return;
+    setSavingGa4Property(true);
+    try {
+      const res = await fetch('/api/sites', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ siteId: selectedSite, ga4PropertyId: propertyId }),
+      });
+      if (res.ok) {
+        setSites(sites.map(s => s.id === selectedSite ? { ...s, ga4PropertyId: propertyId } : s));
+        setShowGa4Modal(false);
+        fetchGa4Data(selectedSite);
+      }
+    } catch { /* ignore */ }
+    setSavingGa4Property(false);
+  };
+
+  const disconnectGa4 = async () => {
+    setDisconnecting(true);
+    try {
+      await fetch('/api/ga4/disconnect', { method: 'DELETE' });
+      setGa4Connected(false);
+      setGa4Properties([]);
+      setGa4Data(null);
+      // Clear ga4PropertyId from all sites
+      setSites(sites.map(s => ({ ...s, ga4PropertyId: null })));
+      setShowGa4Modal(false);
+    } catch { /* ignore */ }
+    setDisconnecting(false);
   };
 
   const generateInsights = async () => {
@@ -382,22 +487,86 @@ export default function Dashboard() {
     <div className="min-h-screen bg-slate-50">
       <header className="bg-white border-b border-slate-200 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center gap-4">
-              <Link href="/dashboard" className="flex items-center gap-2">
-                <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
-                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+          {/* Top row: logo, desktop nav, user menu, mobile toggle */}
+          <div className="flex justify-between items-center h-16 gap-2">
+            <Link href="/dashboard" className="flex items-center gap-2 shrink-0 min-w-0">
+              <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center shrink-0">
+                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+              </div>
+              <span className="font-semibold text-lg sm:text-xl text-slate-900 truncate">Behavioral Insights</span>
+            </Link>
+            <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+              <nav className="hidden lg:flex items-center gap-3">
+                <Link href="/flows" className="text-slate-600 hover:text-slate-900 font-medium text-sm whitespace-nowrap">User Flows</Link>
+                <Link href="/friction" className="text-slate-600 hover:text-slate-900 font-medium text-sm whitespace-nowrap">Patterns</Link>
+                <Link href="/journey" className="text-slate-600 hover:text-slate-900 font-medium text-sm whitespace-nowrap">Journey Map</Link>
+                <Link href="/personas" className="text-slate-600 hover:text-slate-900 font-medium text-sm whitespace-nowrap">Personas</Link>
+              </nav>
+              <button onClick={() => setShowAddSite(true)} className="hidden sm:inline-flex bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap">
+                Add Site
+              </button>
+
+              <div className="relative">
+                <button
+                  onClick={() => setShowUserMenu(!showUserMenu)}
+                  className="flex items-center gap-2 text-sm text-slate-700 hover:text-slate-900"
+                >
+                  <div className="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center">
+                    <span className="text-indigo-600 font-medium">
+                      {session?.user?.name?.[0] || session?.user?.email?.[0]?.toUpperCase() || 'U'}
+                    </span>
+                  </div>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                   </svg>
-                </div>
-                <span className="font-semibold text-xl text-slate-900">Behavioral Insights</span>
-              </Link>
-              {sites.length > 0 && (
-                <div className="ml-4 flex items-center gap-2">
+                </button>
+
+                {showUserMenu && (
+                  <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-slate-200 py-1 z-50">
+                    <div className="px-4 py-2 border-b border-slate-100">
+                      <p className="text-sm font-medium text-slate-900">{session?.user?.name || 'User'}</p>
+                      <p className="text-xs text-slate-500 truncate">{session?.user?.email}</p>
+                    </div>
+                    <Link href="/settings" className="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Settings</Link>
+                    <button
+                      onClick={() => { setShowUserMenu(false); setShowDataModal(true); setImportResult(null); setImportError(''); }}
+                      className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                    >
+                      Export / Import data
+                    </button>
+                    <button
+                      onClick={() => signOut({ callbackUrl: '/login' })}
+                      className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                    >
+                      Sign out
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Mobile menu toggle */}
+              <button
+                onClick={() => setShowMobileMenu((v) => !v)}
+                aria-label="Toggle navigation menu"
+                aria-expanded={showMobileMenu}
+                className="lg:hidden p-2 -mr-2 text-slate-600 hover:text-slate-900"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={showMobileMenu ? 'M6 18L18 6M6 6l12 12' : 'M4 6h16M4 12h16M4 18h16'} />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          {/* Site toolbar: selector + per-site actions (wraps on small screens) */}
+          {sites.length > 0 && (
+            <div className="flex items-center gap-2 flex-wrap pb-3">
                   <select
                     value={selectedSite || ''}
                     onChange={(e) => setSelectedSite(e.target.value)}
-                    className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm bg-white text-slate-900"
+                    className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm bg-white text-slate-900 max-w-[55vw] sm:max-w-none truncate"
                   >
                     {sites.map((site) => (
                       <option key={site.id} value={site.id}>{site.name}</option>
@@ -462,58 +631,37 @@ export default function Dashboard() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3M3 17v2a2 2 0 002 2h14a2 2 0 002-2v-2" />
                     </svg>
                   </button>
+                  {/* GA4 integration */}
+                  <button
+                    onClick={openGa4Modal}
+                    title={currentSite?.ga4PropertyId ? 'Google Analytics connected' : 'Connect Google Analytics'}
+                    className={`p-1.5 rounded-lg border ${
+                      currentSite?.ga4PropertyId
+                        ? 'text-orange-600 bg-orange-50 border-orange-300'
+                        : 'text-slate-500 hover:text-orange-600 hover:bg-orange-50 border-slate-300 hover:border-orange-300'
+                    }`}
+                  >
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                    </svg>
+                  </button>
                 </div>
               )}
-            </div>
-            <div className="flex items-center gap-3">
-              <Link href="/flows" className="text-slate-600 hover:text-slate-900 font-medium text-sm whitespace-nowrap">User Flows</Link>
-              <Link href="/friction" className="text-slate-600 hover:text-slate-900 font-medium text-sm whitespace-nowrap">Patterns</Link>
-              <Link href="/journey" className="text-slate-600 hover:text-slate-900 font-medium text-sm whitespace-nowrap">Journey Map</Link>
-              <Link href="/personas" className="text-slate-600 hover:text-slate-900 font-medium text-sm whitespace-nowrap">Personas</Link>
-              <button onClick={() => setShowAddSite(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap">
-                Add Site
-              </button>
-
-              <div className="relative">
-                <button
-                  onClick={() => setShowUserMenu(!showUserMenu)}
-                  className="flex items-center gap-2 text-sm text-slate-700 hover:text-slate-900"
-                >
-                  <div className="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center">
-                    <span className="text-indigo-600 font-medium">
-                      {session?.user?.name?.[0] || session?.user?.email?.[0]?.toUpperCase() || 'U'}
-                    </span>
-                  </div>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
-
-                {showUserMenu && (
-                  <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-slate-200 py-1 z-50">
-                    <div className="px-4 py-2 border-b border-slate-100">
-                      <p className="text-sm font-medium text-slate-900">{session?.user?.name || 'User'}</p>
-                      <p className="text-xs text-slate-500 truncate">{session?.user?.email}</p>
-                    </div>
-                    <Link href="/settings" className="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Settings</Link>
-                    <button
-                      onClick={() => { setShowUserMenu(false); setShowDataModal(true); setImportResult(null); setImportError(''); }}
-                      className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
-                    >
-                      Export / Import data
-                    </button>
-                    <button
-                      onClick={() => signOut({ callbackUrl: '/login' })}
-                      className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
-                    >
-                      Sign out
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
         </div>
+
+        {/* Mobile menu */}
+        {showMobileMenu && (
+          <nav className="lg:hidden border-t border-slate-200 px-4 sm:px-6 py-2 flex flex-col">
+            <Link href="/flows" onClick={() => setShowMobileMenu(false)} className="py-2.5 text-sm font-medium text-slate-600 hover:text-slate-900">User Flows</Link>
+            <Link href="/friction" onClick={() => setShowMobileMenu(false)} className="py-2.5 text-sm font-medium text-slate-600 hover:text-slate-900">Patterns</Link>
+            <Link href="/journey" onClick={() => setShowMobileMenu(false)} className="py-2.5 text-sm font-medium text-slate-600 hover:text-slate-900">Journey Map</Link>
+            <Link href="/personas" onClick={() => setShowMobileMenu(false)} className="py-2.5 text-sm font-medium text-slate-600 hover:text-slate-900">Personas</Link>
+            <button onClick={() => { setShowMobileMenu(false); setShowAddSite(true); }} className="mt-1 mb-1 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium">Add Site</button>
+          </nav>
+        )}
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -546,8 +694,8 @@ export default function Dashboard() {
               </div>
             )}
 
-            <div className="flex justify-between items-center mb-6">
-              <div className="flex gap-2">
+            <div className="flex flex-wrap justify-between items-center gap-3 mb-6">
+              <div className="flex flex-wrap gap-2">
                 {['7d', '30d', '90d'].map((p) => (
                   <button
                     key={p}
@@ -571,7 +719,7 @@ export default function Dashboard() {
                   </label>
                 )}
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <Link href="/friction" className="flex items-center gap-2 bg-indigo-50 border border-indigo-200 text-indigo-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-100">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
@@ -608,26 +756,32 @@ export default function Dashboard() {
               <div className="bg-white rounded-xl border border-slate-200 p-4">
                 <p className="text-sm text-slate-500">Sessions</p>
                 <p className="text-2xl font-bold text-slate-900">{metrics?.overview?.totalSessions || 0}</p>
+                {ga4Data && <p className="text-xs text-orange-500 mt-1">GA4: {ga4Data.overview.sessions.toLocaleString()}</p>}
               </div>
               <div className="bg-white rounded-xl border border-slate-200 p-4">
                 <p className="text-sm text-slate-500">Visitors</p>
                 <p className="text-2xl font-bold text-slate-900">{metrics?.overview?.uniqueVisitors || 0}</p>
+                {ga4Data && <p className="text-xs text-orange-500 mt-1">GA4: {ga4Data.overview.totalUsers.toLocaleString()}</p>}
               </div>
               <div className="bg-white rounded-xl border border-slate-200 p-4">
                 <p className="text-sm text-slate-500">Page Views</p>
                 <p className="text-2xl font-bold text-slate-900">{metrics?.overview?.totalPageViews || 0}</p>
+                {ga4Data && <p className="text-xs text-orange-500 mt-1">GA4 new: {ga4Data.overview.newUsers.toLocaleString()}</p>}
               </div>
               <div className="bg-white rounded-xl border border-slate-200 p-4">
                 <p className="text-sm text-slate-500">Avg. Duration</p>
                 <p className="text-2xl font-bold text-slate-900">{formatDuration(metrics?.overview?.avgSessionDuration || 0)}</p>
+                {ga4Data && <p className="text-xs text-orange-500 mt-1">GA4: {formatDuration(ga4Data.overview.avgSessionDuration)}</p>}
               </div>
               <div className="bg-white rounded-xl border border-slate-200 p-4">
                 <p className="text-sm text-slate-500">Bounce Rate</p>
                 <p className="text-2xl font-bold text-slate-900">{metrics?.overview?.bounceRate || 0}%</p>
+                {ga4Data && <p className="text-xs text-orange-500 mt-1">GA4 eng: {ga4Data.overview.engagementRate}%</p>}
               </div>
               <div className="bg-white rounded-xl border border-slate-200 p-4">
                 <p className="text-sm text-slate-500">Scroll Depth</p>
                 <p className="text-2xl font-bold text-slate-900">{metrics?.overview?.avgScrollDepth || 0}%</p>
+                {ga4Data && <p className="text-xs text-orange-500 mt-1">GA4 conv: {ga4Data.overview.conversions}</p>}
               </div>
             </div>
 
@@ -672,9 +826,200 @@ export default function Dashboard() {
                 )}
               </div>
             </div>
+
+            {/* GA4 data panels */}
+            {ga4Data && !ga4Loading && (
+              <div className="grid md:grid-cols-2 gap-6 mt-6">
+                <div className="bg-white rounded-xl border border-orange-200 p-6">
+                  <div className="flex items-center gap-2 mb-4">
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                    </svg>
+                    <h3 className="font-semibold text-slate-900">Traffic Sources</h3>
+                    <span className="text-xs text-orange-500 font-medium ml-auto">via GA4</span>
+                  </div>
+                  {ga4Data.trafficSources.length > 0 ? (
+                    <div className="space-y-2.5">
+                      {ga4Data.trafficSources.map((src, i) => {
+                        const total = ga4Data.trafficSources.reduce((sum, s) => sum + s.sessions, 0);
+                        const percent = total > 0 ? Math.round((src.sessions / total) * 100) : 0;
+                        const label = src.source === '(direct)' && src.medium === '(none)'
+                          ? 'Direct'
+                          : `${src.source} / ${src.medium}`;
+                        return (
+                          <div key={i}>
+                            <div className="flex justify-between text-sm mb-1">
+                              <span className="text-slate-600 truncate max-w-[180px] capitalize">{label}</span>
+                              <span className="text-slate-900 font-medium shrink-0 ml-2">{percent}% · {src.sessions}</span>
+                            </div>
+                            <div className="h-1.5 bg-slate-100 rounded-full">
+                              <div className="h-full bg-orange-400 rounded-full" style={{ width: `${percent}%` }} />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-slate-500">No traffic source data.</p>
+                  )}
+                </div>
+
+                <div className="bg-white rounded-xl border border-orange-200 p-6">
+                  <div className="flex items-center gap-2 mb-4">
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                    </svg>
+                    <h3 className="font-semibold text-slate-900">Page Engagement</h3>
+                    <span className="text-xs text-orange-500 font-medium ml-auto">via GA4</span>
+                  </div>
+                  {ga4Data.topPages.length > 0 ? (
+                    <div className="space-y-2.5">
+                      {ga4Data.topPages.slice(0, 5).map((page, i) => (
+                        <div key={i} className="flex justify-between items-center">
+                          <span className="text-sm text-slate-600 truncate max-w-[170px]">{page.pagePath}</span>
+                          <div className="text-right shrink-0 ml-2">
+                            <span className="text-sm font-medium text-slate-900">{page.pageViews} views</span>
+                            <span className="text-xs text-slate-400 block">{page.exitRate}% exit · {formatDuration(page.avgEngagementTime)}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-slate-500">No page data.</p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Prompt to connect GA4 if no property linked */}
+            {!currentSite?.ga4PropertyId && !ga4Loading && (
+              <div className="mt-6 bg-orange-50 border border-orange-200 rounded-xl px-5 py-4 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-orange-900">Connect Google Analytics 4</p>
+                  <p className="text-sm text-orange-700 mt-0.5">Link a GA4 property to see traffic sources, conversions, and page engagement alongside your behavioral data.</p>
+                </div>
+                <button
+                  onClick={openGa4Modal}
+                  className="ml-4 shrink-0 bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
+                >
+                  Connect GA4
+                </button>
+              </div>
+            )}
           </>
         )}
       </main>
+
+      {/* ── GA4 Integration Modal ── */}
+      {showGa4Modal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md mx-4">
+            <div className="flex justify-between items-center mb-5">
+              <div className="flex items-center gap-2">
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                  <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                  <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                  <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                </svg>
+                <h2 className="text-lg font-semibold text-slate-900">Google Analytics 4</h2>
+              </div>
+              <button onClick={() => setShowGa4Modal(false)} className="text-slate-400 hover:text-slate-600">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {ga4Error && (
+              <div className="mb-4 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
+                {ga4Error}
+              </div>
+            )}
+
+            {ga4ModalLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" />
+              </div>
+            ) : !ga4Connected ? (
+              <div className="text-center py-4">
+                <p className="text-sm text-slate-600 mb-5">
+                  Connect your Google Analytics account to see traffic sources, conversions, and page engagement data alongside your behavioral insights.
+                </p>
+                <a
+                  href="/api/ga4/auth"
+                  className="inline-flex items-center gap-2 bg-white border-2 border-slate-200 hover:border-slate-300 text-slate-700 px-5 py-2.5 rounded-lg font-medium text-sm shadow-sm"
+                >
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                  </svg>
+                  Sign in with Google
+                </a>
+                <p className="text-xs text-slate-400 mt-3">Read-only access to your Analytics data</p>
+              </div>
+            ) : (
+              <div>
+                <div className="flex items-center gap-2 mb-4 bg-green-50 border border-green-200 rounded-lg px-4 py-2.5">
+                  <svg className="w-4 h-4 text-green-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  <p className="text-sm text-green-700 font-medium">Google account connected</p>
+                </div>
+
+                <p className="text-sm font-medium text-slate-900 mb-2">
+                  GA4 property for <span className="text-indigo-600">{currentSite?.name}</span>
+                </p>
+
+                {ga4Properties.length === 0 ? (
+                  <p className="text-sm text-slate-500 mb-4">No GA4 properties found in your account.</p>
+                ) : (
+                  <div className="space-y-2 mb-4 max-h-56 overflow-y-auto pr-0.5">
+                    {ga4Properties.map((prop) => (
+                      <button
+                        key={prop.id}
+                        onClick={() => saveGa4Property(prop.id)}
+                        disabled={savingGa4Property}
+                        className={`w-full flex items-center justify-between px-4 py-3 rounded-lg border text-left transition-colors disabled:opacity-50 ${
+                          currentSite?.ga4PropertyId === prop.id
+                            ? 'border-orange-500 bg-orange-50'
+                            : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                        }`}
+                      >
+                        <div>
+                          <p className="text-sm font-medium text-slate-900">{prop.name}</p>
+                          <p className="text-xs text-slate-400">{prop.id}</p>
+                        </div>
+                        {currentSite?.ga4PropertyId === prop.id && (
+                          <svg className="w-4 h-4 text-orange-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <button
+                  onClick={disconnectGa4}
+                  disabled={disconnecting}
+                  className="w-full text-sm text-slate-500 hover:text-red-600 py-2 disabled:opacity-50"
+                >
+                  {disconnecting ? 'Disconnecting...' : 'Disconnect Google account'}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── Export / Import Modal ── */}
       {showDataModal && (

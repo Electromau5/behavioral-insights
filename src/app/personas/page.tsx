@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
+import AppNav from '@/components/AppNav';
 
 interface Site {
   id: string;
@@ -308,19 +308,7 @@ export default function PersonasPage() {
   return (
     <div className="min-h-screen bg-slate-50">
       {/* Header */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-8">
-            <Link href="/dashboard" className="text-slate-900 font-bold text-lg">behavioral<span className="text-indigo-600">insights</span></Link>
-            <nav className="flex items-center gap-6">
-              <Link href="/flows" className="text-slate-600 hover:text-slate-900 font-medium text-sm">User Flows</Link>
-              <Link href="/friction" className="text-slate-600 hover:text-slate-900 font-medium text-sm">Patterns</Link>
-              <Link href="/journey" className="text-slate-600 hover:text-slate-900 font-medium text-sm">Journey Map</Link>
-              <Link href="/personas" className="text-indigo-600 font-medium text-sm">Personas</Link>
-            </nav>
-          </div>
-        </div>
-      </header>
+      <AppNav active="/personas" />
 
       {/* Toolbar */}
       <div className="bg-white border-b border-slate-200">
